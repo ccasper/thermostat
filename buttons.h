@@ -1,6 +1,7 @@
 #ifndef BUTTONS_H_
 #define BUTTONS_H_
 
+
 #include "millis_since.h"
 
 enum class Button {
@@ -13,7 +14,7 @@ enum class Button {
   TIMEOUT
 };
 
-// Helper for managing the 1604 shield analog buttons.
+// Helper for managing the 1602 shield analog buttons. This performs button debouncing and enables two levels of automatic button presses when a button is held longer than a few seconds to allow quicker cycling through the values.
 class Buttons {
   public:
     // Returns a human readable button character for serial output debugging.

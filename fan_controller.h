@@ -16,7 +16,7 @@ class FanController {
       // Get the persisted fan setting.
       bool fan_enable = settings->persisted.fan_always_on;
 
-      // If we're within 5 minutes of heating, keep heating.
+      // Allow extending the fan after a heat/cool cycle.
       Event* curr_event;
       Event* prev_event;
       {
@@ -34,13 +34,9 @@ class FanController {
         prev_event = &settings->events[prev_idx];
       }
 
-      if (curr_event->heat) {
-        fan_enable = true;
-      }
-
-      // Keep running the fan for 5 minutes after a heat/cool cycle.
+      // Keep running the fan for extended minutes after a heat/cool cycle.
       if (prev_event->heat || prev_event->cool) {
-        if (minutesSince(curr_event->start_time) < kExtendFanRunMinutes) {
+        if (minutesSince(curr_event->start_time) < settings->persisted.fan_extend_mins) {
           fan_enable = true;
         }
       }

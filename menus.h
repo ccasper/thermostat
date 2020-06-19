@@ -139,7 +139,7 @@ class Menus {
       ResetLine();
 
       uint8_t menu_index = 0;
-      constexpr uint8_t MENU_MAX = 9;
+      constexpr uint8_t MENU_MAX = 11;
 
       while (true) {
         Button button;
@@ -154,21 +154,24 @@ class Menus {
             button = SetMode();
             break;
           case 3:
-            button = SetSetpoint(0);
+            button = SetSetpoint(0, Mode::HEAT);
             break;
           case 4:
-            button = SetSetpoint(1);
+            button = SetSetpoint(1, Mode::HEAT);
             break;
           case 5:
-            button  = SetCoolTemp();
+            button  = SetSetpoint(0, Mode::COOL);
             break;
           case 6:
-            button = SetTolerance();
-            break;
-          case 7:
-            button = SetDate();
+            button = SetSetpoint(1, Mode::COOL);
             break;
           case 8:
+            button = SetTolerance();
+            break;
+          case 9:
+            button = SetDate();
+            break;
+          case 10:
             button = SetSaveAllSettingsForDebug();
             break;
           case MENU_MAX:
@@ -191,45 +194,126 @@ class Menus {
 
 
     Button SetFan() {
+      const bool initial_fan_setting = settings_->persisted.fan_always_on;
       bool fan = settings_->persisted.fan_always_on;
 
+      uint8_t field = 0;
+      constexpr uint8_t kTotalFields = 2;
+      int fan_extend_mins = settings_->persisted.fan_extend_mins;
+
+      uint32_t flash_ms = millis();
+      bool flash_state = false;
+
+      int timeout_counter = 0;
+
       // Setup the display
+      // "Fan: EXT:060m"
+      // "Fan: ON     "
       ResetLine();
       lcd_->print("Fan: ");
-
-      // Draw the value.
       auto update = [&]() {
         lcd_->setCursor(5, 1);
-        lcd_->print(fan ? "ON  " : "AUTO");
+        if (millisSince(flash_ms) > 500) {
+          flash_state = !flash_state;
+          flash_ms = millis();
+        }
+
+        // Print the Fan On/Off status.
+        if (field == 0 && flash_state == true) {
+          lcd_->print("___ ");
+        } else {
+          lcd_->print(fan ? "ON  " : "EXT:");
+        }
+
+        // Print the extended fan time.
+        //
+        // When the fan is always on, hide the extended minutes.
+        if (fan == true) {
+          lcd_->print("    ");
+        } else if (field == 1 && flash_state == true) {
+          lcd_->print("___m");
+        } else {
+          if (fan_extend_mins < 100) {
+            lcd_->print("0");
+          }
+          if (fan_extend_mins < 10) {
+            lcd_->print("0");
+          }
+          lcd_->print(fan_extend_mins);
+          lcd_->print("m");
+        }
       };
+      // First see if the user wants to change this item.
       update();
+      Button button = WaitBeforeEdit();
+      if (button != Button::SELECT) {
+        return button;
+      }
 
       while (true) {
-        const Button button = wait_for_button_press_(10000);
+        // Only after 10 seconds of timeouts do we pass the timeout button.
+        Button button = wait_for_button_press_(500);
+        if (button == Button::TIMEOUT) {
+          timeout_counter++;
+          if (timeout_counter < 20) {
+            // Stay in the menu for now.
+            button = Button::NONE;
+          }
+        } else {
+          timeout_counter = 0;
+        }
 
         // Exit when we get a left arrow in the edit menu.
+        int increment = 1;
         switch (button) {
           case Button::DOWN:
-            fan = false;
-            // Also change the fan temporarily. This makes it easer to change the fan speed.
-            settings_->persisted.fan_always_on = fan;
-            SetChanged(settings_);
+            if (field == 0) {
+              fan = false;
+              // Also change the fan temporarily. This makes it easer to change the fan speed.
+              settings_->persisted.fan_always_on = fan;
+              SetChanged(settings_);
+              break;
+            }
+            if (field == 1) {
+              increment = -1;
+              // Fall through.
+            }
+          case Button::RIGHT:
+            // Only allow changing the extended fan time if the fan setting is set to auto (false).
+            if ((field == 0 && fan == false) || (field == 1)) {
+              field = (field + 1) % kTotalFields;
+            }
             break;
           case Button::UP:
-            fan = true;
-            // Also change the fan temporarily. This makes it easer to change the fan speed.
-            settings_->persisted.fan_always_on = fan;
-            SetChanged(settings_);
+            if (field == 0) {
+              fan = true;
+
+              // Change the fan temporarily. This makes it easer to perform special fan speed changes.
+              settings_->persisted.fan_always_on = fan;
+              settings_->persisted.fan_extend_mins = fan_extend_mins;
+              SetChanged(settings_);
+            }
+            if (field == 1) {
+              fan_extend_mins += increment;
+            }
             break;
           case Button::SELECT:
             // Update the settings data.
             settings_->persisted.fan_always_on = fan;
+            settings_->persisted.fan_extend_mins = fan_extend_mins;
             SetChangedAndPersist(settings_);
 
             PrintUpdatedAndWait();
             return Button::NONE;
             break;
+          case Button::NONE:
+            // Do nothing.
+            break;
           default:
+            // Restore the fan setting to the initial value when cancelled.
+            settings_->persisted.fan_always_on = initial_fan_setting;
+            SetChanged(settings_);
+
             return button;
         }
         update();
@@ -452,17 +536,18 @@ class Menus {
     }
 
 
-    Button SetSetpoint(const uint8_t setpoint) {
+    Button SetSetpoint(const uint8_t setpoint, const Mode mode) {
       uint8_t field = 0;
-      int temp_x10 = settings_->persisted.setpoints[setpoint].temp_x10;
-      int hour = settings_->persisted.setpoints[setpoint].hour;
-      int minute = settings_->persisted.setpoints[setpoint].minute;
+      int temp_x10 = (mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].temp_x10 : settings_->persisted.cool_setpoints[setpoint].temp_x10;;
+      int hour = (mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].hour : settings_->persisted.cool_setpoints[setpoint].hour;
+      int minute = (mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].minute : settings_->persisted.cool_setpoints[setpoint].minute;
       uint32_t flash_ms = millis();
       bool flash_state = false;
 
       ResetLine();
+      lcd_->print((mode == Mode::HEAT) ? "H" : "C");
       auto update = [&]() {
-        lcd_->setCursor(0, 1);
+        lcd_->setCursor(1, 1);
         lcd_->print(setpoint + 1);
         lcd_->print(":");
 
@@ -568,9 +653,15 @@ class Menus {
             }
             break;
           case Button::SELECT:
-            settings_->persisted.setpoints[setpoint].temp_x10 = temp_x10;
-            settings_->persisted.setpoints[setpoint].hour = hour;
-            settings_->persisted.setpoints[setpoint].minute = minute;
+            if (mode == Mode::HEAT) {
+              settings_->persisted.heat_setpoints[setpoint].temp_x10 = temp_x10;
+              settings_->persisted.heat_setpoints[setpoint].hour = hour;
+              settings_->persisted.heat_setpoints[setpoint].minute = minute;
+            } else {
+              settings_->persisted.cool_setpoints[setpoint].temp_x10 = temp_x10;
+              settings_->persisted.cool_setpoints[setpoint].hour = hour;
+              settings_->persisted.cool_setpoints[setpoint].minute = minute;
+            }
             // Update the settings data.
             SetChangedAndPersist(settings_);
             PrintUpdatedAndWait();
@@ -863,30 +954,34 @@ class Menus {
     }
 
     // Updates the second line of the display when a menu isn't active.
-    void UpdateInformationalState() {
+    Button InformationalState() {
+      while (true) {
+        // Display the status information.
+        Date date = rtc_date_->Now();
+        int hours = date.hour;
+        int minutes = date.minute;
+        lcd_->setCursor(0, 1);
+        lcd_->print("Time: ");
+        if (hours < 10) {
+          lcd_->print("0");
+        }
+        lcd_->print(hours);
+        lcd_->print(":");
+        if (minutes < 10) {
+          lcd_->print("0");
+        }
+        lcd_->print(minutes);
 
-      if (millisSince(changed_ms_) > 2000) {
-        changed_ms_ = millis();
-      }
-      Date date = rtc_date_->Now();
-      int hours = date.hour;
-      int minutes = date.minute;
-      lcd_->setCursor(0, 1);
-      lcd_->print("Time: ");
-      if (hours < 10) {
-        lcd_->print("0");
-      }
-      lcd_->print(hours);
-      lcd_->print(":");
-      if (minutes < 10) {
-        lcd_->print("0");
-      }
-      lcd_->print(minutes);
+        lcd_->print("      ");
 
-      lcd_->print("      ");
+        Button button = wait_for_button_press_(2000);
 
+        if (button != Button::NONE && button != Button::TIMEOUT) {
+          return button;
+        }
+
+      }
     }
-
 
     Button EditOverrideTemp() {
       const Date date = rtc_date_->Now();
@@ -895,7 +990,7 @@ class Menus {
         lcd_->print("Override: ");
         // print the number of seconds since reset:
         lcd_->setCursor(10, 1);
-        int temp = GetSetpointTemp(*settings_, date);
+        int temp = GetSetpointTemp(*settings_, date, Mode::HEAT);
         lcd_->print(static_cast<int>(temp) / 10, DEC);
         lcd_->print(".");
         lcd_->print(static_cast<int>(temp) % 10, DEC);

@@ -6,10 +6,11 @@
 #include "millis_since.h"
 
 // 65536 is the largest representable value.
-constexpr uint16_t VERSION = 34804;
+constexpr uint16_t VERSION = 34805;
 
 enum class Mode {
-  HEAT, COOL
+  HEAT,
+  COOL
 };
 
 
@@ -43,9 +44,12 @@ struct PersistedSettings {
   // RH to set the humidifier to. 0 = Off, 100%=On.
   uint8_t humidity : 7;
 
-  Setpoint setpoints[2];
+  Setpoint heat_setpoints[2];
+  Setpoint cool_setpoints[2];
   int tolerance_x10 = 15; // 1.5 degrees above and below.
   int cool_temp_x10 = 745;
+
+  int fan_extend_mins = 5;
 };
 
 // List of events for temperature change calculations.
@@ -86,7 +90,6 @@ struct Settings {
   // Snapshot of the current temperature.
   int current_temp_x10 = 0;
   int current_bme_temp_x10 = 0;
-  // Snapshot of the current mean averaged temperature.
   int current_mean_temp_x10 = 0;
 
   int override_temp_x10 = 0;
@@ -165,15 +168,21 @@ static Settings GetEepromOrDefaultSettings() {
     Settings defaults;
     defaults.persisted.version = VERSION;
     // 7am-9pm -> 70.0° ; 9pm-7am -> 69°
-    defaults.persisted.setpoints[0].hour = 7;
-    defaults.persisted.setpoints[0].temp_x10 = 700;
-    defaults.persisted.setpoints[1].hour = 21;
-    defaults.persisted.setpoints[1].temp_x10 = 690;
+    defaults.persisted.heat_setpoints[0].hour = 7;
+    defaults.persisted.heat_setpoints[0].temp_x10 = 700;
+    defaults.persisted.heat_setpoints[1].hour = 21;
+    defaults.persisted.heat_setpoints[1].temp_x10 = 690;
 
-    // With a 1.5° tolerance.
+    // 7am-9pm -> 77.0° ; 9pm-7am -> 72°
+    defaults.persisted.cool_setpoints[0].hour = 7;
+    defaults.persisted.cool_setpoints[0].temp_x10 = 770;
+    defaults.persisted.cool_setpoints[1].hour = 21;
+    defaults.persisted.cool_setpoints[1].temp_x10 = 720;
+
+    // With a 1.1° tolerance.
     //
-    // If the setpoint is 70°, heat stops at 70° and heating restarts at 68.5°, or cooling restarts at 71.5°.
-    defaults.persisted.tolerance_x10 = 15;
+    // If the setpoint is 70°, heat stops at 70° and heating restarts at 68.9°, or cooling restarts at 71.1°.
+    defaults.persisted.tolerance_x10 = 11;
 
     // Write them to the eeprom.
     SetChangedAndPersist(&defaults);
@@ -183,29 +192,25 @@ static Settings GetEepromOrDefaultSettings() {
   return settings;
 }
 
-static int GetSetpointTemp(const Settings& settings, const Date& date);
-
-// Overrides and temperature based on the current setpoint temperature the changed flag for faster updating.
-static void SetOverrideTemp(int amount, Settings *settings, const Date& date) {
-  // Bound the value to 40.0-99.9.
-  settings->override_temp_x10 = max(400, min(999, GetSetpointTemp(*settings, date) + amount));
-  settings->override_temp_started_ms = millis();
-}
+static int GetSetpointTemp(const Settings& settings, const Date& date, Mode mode);
 
 static bool IsOverrideTempActive(const Settings& settings) {
   return settings.override_temp_x10 != 0;
 }
 
-//struct LastHeating {
-//  uint32_t millis_start;
-//  uint32_t millis_end;
-//  int temp_start_x10;
-//  int temp_end_x10;
-//};
+static int GetOverrideTemp(const Settings& settings) {
+  if (IsOverrideTempActive(settings)) {
+    return max(400, min(999, settings.override_temp_x10));
+  }
+  return settings.current_mean_temp_x10;
+}
 
-//static LastHeating GetLastHeating(const Settings& settings) {
-//  return LastHeating();
-//}
+// Overrides and temperature based on the current setpoint temperature the changed flag for faster updating.
+static void SetOverrideTemp(int amount, Settings *settings, const Date& date) {
+  // Bound the value to 40.0-99.9.
+  settings->override_temp_x10 = max(400, min(999, GetOverrideTemp(*settings) + amount));
+  settings->override_temp_started_ms = millis();
+}
 
 // This checks if we should be in a 5 minute lockout when switching from cooling to heating or heating to cooling.
 static bool IsInLockoutMode(const Mode mode, const Event *events, const uint8_t events_size) {
@@ -269,17 +274,10 @@ static bool IsInLockoutMode(const Mode mode, const Event *events, const uint8_t 
   return false;
 }
 
-static int GetCoolTemp(const Settings& settings) {
-  if (settings.override_temp_x10 != 0) {
-    return max(400, min(999, settings.override_temp_x10));
-  }
-  return settings.persisted.cool_temp_x10;
-}
-
 // Gets the current setpoint temperature based on current date and any set override.
-static int GetSetpointTemp(const Settings& settings, const Date& date) {
-  if (settings.override_temp_x10 != 0) {
-    return max(400, min(999, settings.override_temp_x10));
+static int GetSetpointTemp(const Settings& settings, const Date& date, const Mode mode) {
+  if (IsOverrideTempActive(settings)) {
+    return GetOverrideTemp(settings);
   }
 
   // TODO: Loop through the setpoints looking for a match, otherwise use the first one set.
@@ -288,7 +286,8 @@ static int GetSetpointTemp(const Settings& settings, const Date& date) {
 
   uint16_t smallest_diff = 24 * 60;
   int temp = 0;
-  for (const Setpoint& setpoint : settings.persisted.setpoints) {
+
+  for (const Setpoint& setpoint : (mode == Mode::HEAT) ? settings.persisted.heat_setpoints : settings.persisted.cool_setpoints) {
     uint16_t minutes = setpoint.hour * 60 + setpoint.minute;
     // clock=18:00, set1=19:00, set2=23:00
     //   diff1= 19-18 = 1
@@ -298,15 +297,8 @@ static int GetSetpointTemp(const Settings& settings, const Date& date) {
       smallest_diff = diff;
       temp = setpoint.temp_x10;
     }
-
   }
   return max(400, min(999, temp));
 }
-
-//static Date RtcToDate(char *rtc) {
-//  Date date;
-//  date.hour = 3;
-//  return date;
-//}
 
 #endif // SETTINGS_H_
