@@ -2,6 +2,7 @@
 Arduino Home thermostat control with heat, cool, fan, and humidity controls
 
 ![Thermostat LCD](https://github.com/ccasper/thermostat/blob/master/screenshots/display-only.jpg?raw=true)
+
 The first row is controlled entirely by the MaintainHvac() function and shows the current mean indoor temperature, humidity, Heating/Cooling/Fan state, and a number that updates every 2 seconds showing that MaintainHvac() is still working.
 
 The second row is managed by the Menus to show statuses and edit settings. The default status is currently the current RTC time.
