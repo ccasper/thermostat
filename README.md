@@ -2,6 +2,13 @@
 Arduino Home thermostat control with heat, cool, fan, and humidity controls
 
 ![Thermostat LCD](https://github.com/ccasper/thermostat/blob/master/screenshots/display-only.jpg?raw=true)
+The first row is controlled entirely by the MaintainHvac() function and shows the current mean indoor temperature, humidity, Heating/Cooling/Fan state, and a number that updates every 2 seconds showing that MaintainHvac() is still working.
+
+The second row is managed by the Menus to show statuses and edit settings. The default status is currently the current RTC time.
+
+Pressing the Left button guides you through other informational statuses, and pressing the Right button guides you through editable settings.
+
+Up and Down arrows on the main status screen will allow you to set an override temperature for 2 hours. On the edit menus, it allows changing settings.
 
 This is an Arduino sketch for a Home Thermostat using the following parts:
 - Arduino Mega 2560 board or similar.
