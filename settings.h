@@ -6,7 +6,7 @@
 #include "millis_since.h"
 
 // 65536 is the largest representable value.
-constexpr uint16_t VERSION = 34805;
+constexpr uint16_t VERSION = 34806;
 
 enum class Mode {
   HEAT,
@@ -47,7 +47,6 @@ struct PersistedSettings {
   Setpoint heat_setpoints[2];
   Setpoint cool_setpoints[2];
   int tolerance_x10 = 15; // 1.5 degrees above and below.
-  int cool_temp_x10 = 745;
 
   int fan_extend_mins = 5;
 };

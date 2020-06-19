@@ -326,13 +326,13 @@ void MaintainHvac() {
   Serial.println("Cool check: " + String(cool_temp_x10));
   // Should we enable/disable cooling mode?
   if (settings.cool_running) {
-    if (temp_mean < settings.persisted.cool_temp_x10) {
+    if (temp_mean < cool_temp_x10) {
       // Stop cooling, we've reached our setpoint.
       settings.cool_running = false;
     }
   } else {
     // Assuming a set point of 70, we should start cooling at 72 with a tolerance set of 2.
-    if (temp_mean >= settings.persisted.cool_temp_x10 + settings.persisted.tolerance_x10) {
+    if (temp_mean >= cool_temp_x10 + settings.persisted.tolerance_x10) {
       if (!IsInLockoutMode(Mode::COOL, settings.events, 10)) {
         // Start heating, we've reached our upper tolerance limit.
         settings.cool_running = true;
@@ -399,6 +399,8 @@ void MaintainHvac() {
 }
 
 // Waits for a button press while maintaining the HVAC system.
+//
+// Menus use this to ensure sleeping always updates the HVAC routine.
 Button WaitForButtonPress(const uint32_t timeout) {
   const uint32_t start = millis();
   Button button = Button::NONE;
@@ -447,5 +449,5 @@ void loop() {
     // This is blocking.
     menu.EditSettings();
   }
-  // Once we're done editing settings, we return to the cycling of info.
+  // Once we're done editing settings, return back to showing the informational state.
 }
