@@ -1,6 +1,8 @@
 # thermostat
 Arduino Home thermostat control with heat, cool, fan, and humidity controls
 
+![Thermostat LCD](https://github.com/ccasper/thermostat/blob/master/screenshots/display-only.jpg?raw=true)
+
 This is an Arduino sketch for a Home Thermostat using the following parts:
 - Arduino Mega 2560 board or similar.
 - 1602 LCD Keypad Shield (6 buttons + 16x2 LCD)
