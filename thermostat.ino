@@ -216,9 +216,8 @@ void MaintainHvac() {
   }
   settings.hvac_debug = 'l';
 
-  // Kick off the next asynchronous reading.
+  // Kick off the next asynchronous readings.
   bme.beginReading();
-
   settings.hvac_debug = 'm';
   dallas::sensor.requestTemperatures();
   settings.hvac_debug = 'n';
@@ -290,7 +289,7 @@ void MaintainHvac() {
   if (settings.heat_running) {
     Serial.println("Heat running");
 
-    if (temp_mean >= setpoint_temp_x10) {
+    if (temp_mean >= setpoint_temp_x10 + settings.persisted.tolerance_x10) {
       Serial.println("Reached setpoint");
       // Stop heating, we've reached our setpoint.
       settings.heat_running = false;
@@ -300,7 +299,7 @@ void MaintainHvac() {
     if (settings.persisted.heat_enabled) {
       Serial.println("Settings heat true");
     }
-    if (temp_mean > setpoint_temp_x10 - settings.persisted.tolerance_x10) {
+    if (temp_mean > setpoint_temp_x10) {
       Serial.println("Temp not met " + String(temp_mean) + "<=" + String(setpoint_temp_x10) + "-" +  String(settings.persisted.tolerance_x10));
     }
     // Assuming Set point is 70 and current room temp is 68, we should enable heating if tolerance is 2.
@@ -326,13 +325,13 @@ void MaintainHvac() {
   Serial.println("Cool check: " + String(cool_temp_x10));
   // Should we enable/disable cooling mode?
   if (settings.cool_running) {
-    if (temp_mean < cool_temp_x10) {
+    if (temp_mean <= cool_temp_x10 - settings.persisted.tolerance_x10) {
       // Stop cooling, we've reached our setpoint.
       settings.cool_running = false;
     }
   } else {
     // Assuming a set point of 70, we should start cooling at 72 with a tolerance set of 2.
-    if (temp_mean >= cool_temp_x10 + settings.persisted.tolerance_x10) {
+    if (temp_mean > cool_temp_x10) {
       if (!IsInLockoutMode(Mode::COOL, settings.events, 10)) {
         // Start heating, we've reached our upper tolerance limit.
         settings.cool_running = true;
