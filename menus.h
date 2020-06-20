@@ -537,6 +537,7 @@ class Menus {
 
 
     Button SetSetpoint(const uint8_t setpoint, const Mode mode) {
+      constexpr uint8_t kMaxFields = 3;
       uint8_t field = 0;
       int temp_x10 = (mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].temp_x10 : settings_->persisted.cool_setpoints[setpoint].temp_x10;;
       int hour = (mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].hour : settings_->persisted.cool_setpoints[setpoint].hour;
@@ -628,9 +629,10 @@ class Menus {
             // Left is the exit button.
             return button;
           case Button::RIGHT:
-            field = (field + 1) % 4;
+            field = (field + 1) % kMaxFields;
             break;
           case Button::DOWN:
+            // Use the same logic as Button::UP, except that the value will be decremented instead of incremented.
             increment = -1;
           // Fall through.
           case Button::UP:
