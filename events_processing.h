@@ -1,6 +1,7 @@
 #ifndef DRIFT_DETECTOR_H_
 #define DRIFT_DETECTOR_H_
-// Helpers to manage the Events struct for performing calculations and creating new events whena applicable.
+// Helpers to manage the Events struct for performing calculations and creating new events
+// whena applicable.
 
 #include "settings.h"
 
@@ -22,7 +23,7 @@ void AddOrUpdateEvent(const uint32_t time_ms, Settings* const settings) {
     new_event = true;
   }
 
-  Event *event = &settings->events[settings->event_index];
+  Event* event = &settings->events[settings->event_index];
   if (settings->heat_running != event->heat) {
     new_event = true;
   }
@@ -32,16 +33,16 @@ void AddOrUpdateEvent(const uint32_t time_ms, Settings* const settings) {
 
   if (new_event) {
     settings->event_index = (settings->event_index + 1) % EVENT_SIZE;
-    Event *event = &settings->events[settings->event_index];
+    Event* event = &settings->events[settings->event_index];
     event->start_time = millis();
     event->empty = false;
     event->heat = settings->heat_running;
     event->cool = settings->cool_running;
-    event->temp_x10 = settings->current_mean_temp_x10;
+    event->temperature_x10 = settings->current_mean_temperature_x10;
 
-    Serial.println("######## NEW EVENT: " + String(settings->event_index) + " Mode: " + String(event->heat) + String(event->cool));
+    Serial.println("######## NEW EVENT: " + String(settings->event_index) +
+                   " Mode: " + String(event->heat) + String(event->cool));
   }
-
 }
 
 // Returns Zero whenn empty, otherwise the length of time for the event.
@@ -55,11 +56,13 @@ uint32_t GetEventDuration(const uint8_t index, const Settings& settings) {
   if (settings.events[(index + 1) % EVENT_SIZE].empty) {
     return millisSince(settings.events[index].start_time);
   }
-  return millisDiff(settings.events[index].start_time, settings.events[(index + 1) % EVENT_SIZE].start_time);
+  return millisDiff(settings.events[index].start_time,
+                    settings.events[(index + 1) % EVENT_SIZE].start_time);
 }
 
 // Returns true if found and value passed back in diff parameter.
-bool GetEventTempDiff(const uint8_t index, const Settings& settings, int* temp_diff_x10) {
+bool GetEventTempDiff(const uint8_t index, const Settings& settings,
+                      int* temperature_diff_x10) {
   // If the event is empty, we don't have a duration.
   if (settings.events[index].empty) {
     return 0;
@@ -69,11 +72,9 @@ bool GetEventTempDiff(const uint8_t index, const Settings& settings, int* temp_d
   if (settings.events[(index + 1) % EVENT_SIZE].empty) {
     return millisSince(settings.events[index].start_time);
   }
-  return millisDiff(settings.events[index].start_time, settings.events[(index + 1) % EVENT_SIZE].start_time);
+  return millisDiff(settings.events[index].start_time,
+                    settings.events[(index + 1) % EVENT_SIZE].start_time);
 }
-
-
-
 
 int OldestIndex(const Settings& settings) {
   int index = -1;
@@ -93,7 +94,7 @@ int OldestIndex(const Settings& settings) {
   return index;
 }
 
-uint32_t CalculateSeconds(bool running, const Settings& settings, uint8_t *events);
+uint32_t CalculateSeconds(bool running, const Settings& settings, uint8_t* events);
 float OnPercent(const Settings& settings) {
   const int current_index = settings.CurrentEventIndex();
   if (current_index == -1) {
@@ -105,7 +106,7 @@ float OnPercent(const Settings& settings) {
   if (off_seconds == 0 && on_seconds == 0) {
     return 0;
   }
-  return on_seconds / (on_seconds + off_seconds);
+  return static_cast<float>(on_seconds) / (on_seconds + off_seconds);
 }
 
 float TempDeltaPerMinute(const bool running, const Settings& settings) {
@@ -121,13 +122,13 @@ float TempDeltaPerMinute(const bool running, const Settings& settings) {
 
   int32_t total_seconds = 0;
   int32_t total_events = 0;
-  double total_temp_diff = 0;
+  double total_temperature_diff = 0;
 
   int index = current_index;
   while (true) {
     // Skip the current index, but use it's start time as the end time for the previous.
     const uint32_t end_ms = settings.events[index].start_time;
-    const int end_temp = settings.events[index].temp_x10;
+    const int end_temp = settings.events[index].temperature_x10;
 
     // Stop if we have reached the oldest index.
     if (index == oldest_index) {
@@ -138,14 +139,14 @@ float TempDeltaPerMinute(const bool running, const Settings& settings) {
     index = index - 1;
 
     const uint32_t start_ms = settings.events[index].start_time;
-    const int start_temp = settings.events[index].temp_x10;
+    const int start_temp = settings.events[index].temperature_x10;
 
     const int32_t length_sec = millisDiff(end_ms, start_ms) / 1000;
-    const double temp_diff = (end_temp - start_temp) / 10.0;
+    const double temperature_diff = (end_temp - start_temp) / 10.0;
 
     if (running && settings.events[index].heat && settings.events[index].cool) {
       total_seconds += length_sec;
-      total_temp_diff += temp_diff;
+      total_temperature_diff += temperature_diff;
       ++total_events;
     }
     if (!running && (settings.events[index].heat || settings.events[index].cool)) {
@@ -155,14 +156,15 @@ float TempDeltaPerMinute(const bool running, const Settings& settings) {
   }
 
   if (total_events > 0) {
-    return total_temp_diff / (total_seconds / 60.0);
+    return total_temperature_diff / (total_seconds / 60.0);
   }
 
   return 0x0;
 }
 
 // Returns how long the system has been either running or not running.
-uint32_t CalculateSeconds(const bool running, const Settings& settings, uint8_t *const events) {
+uint32_t CalculateSeconds(const bool running, const Settings& settings,
+                          uint8_t* const events) {
   uint32_t total_seconds = 0;
   uint32_t total_events = 0;
 

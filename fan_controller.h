@@ -8,9 +8,9 @@ constexpr int kExtendFanRunMinutes = 5;
 
 // Determines when the fan should be running based on the events structure.
 //
-// This allows the fan to run for 5 minutes for better room balancing after the HVAC stops running.
+// This allows the fan to run for 5 minutes for better room balancing after the HVAC stops
+// running.
 class FanController {
-  
   public:
     void UpdateSetting(Settings* const settings) {
       // Get the persisted fan setting.
@@ -46,4 +46,4 @@ class FanController {
     }
 };
 
-#endif //FAN_CONTROLLER_H_
+#endif  // FAN_CONTROLLER_H_

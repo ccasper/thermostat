@@ -23,18 +23,18 @@ int daysSince(const uint32_t previous) {
 }
 
 // Converts Millis to Seconds for easier comparison.
-uint32_t SecondsToMillis(const uint32_t& seconds) {
+constexpr uint32_t SecondsToMillis(const uint32_t& seconds) {
   return seconds * 1000;
 }
 
 // Converts Millis to Minutes for easier comparison.
-uint32_t MinutesToMillis(const uint32_t& minutes) {
+constexpr uint32_t MinutesToMillis(const uint32_t& minutes) {
   return minutes * 60 * 1000;
 }
 
 // Convert Millis to Hours for easier comparison.
-uint32_t HoursToMillis(const uint32_t& hours) {
- return hours * 60 * 60 * 1000;
+constexpr uint32_t HoursToMillis(const uint32_t& hours) {
+  return hours * 60 * 60 * 1000;
 }
 
 #endif

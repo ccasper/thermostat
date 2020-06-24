@@ -14,10 +14,10 @@ constexpr int SSR4_PIN = 36;
 constexpr int SSR3_PIN = 37;
 
 void SetupRelays() {
-  digitalWrite(SSR1_PIN, OFF); // Relay (1)
-  digitalWrite(SSR2_PIN, OFF);// Relay (2)
-  digitalWrite(SSR4_PIN, OFF); // Relay (4)
-  digitalWrite(SSR3_PIN, OFF); // Relay (3)
+  digitalWrite(SSR1_PIN, OFF);  // Relay (1)
+  digitalWrite(SSR2_PIN, OFF);  // Relay (2)
+  digitalWrite(SSR4_PIN, OFF);  // Relay (4)
+  digitalWrite(SSR3_PIN, OFF);  // Relay (3)
   pinMode(SSR1_PIN, OUTPUT);
   pinMode(SSR2_PIN, OUTPUT);
   pinMode(SSR4_PIN, OUTPUT);
@@ -49,6 +49,6 @@ void SetHumidifierRelay(const int state) {
   digitalWrite(SSR4_PIN, state);
 }
 
-}
+}  // namespace relays
 
-#endif // RELAYS_H_
+#endif  // RELAYS_H_

@@ -2,40 +2,41 @@
 #define MENUS_H_
 
 #include "buttons.h"
-#include "settings.h"
-#include "rtc_date.h"
 #include "events_processing.h"
-//
-//                Time
+#include "rtc_date.h"
+#include "settings.h"
 //
 //  Each [R] press takes the user through editable settings.
 //       Pressing [U] or [D] causes edit mode to be enabled.
-//       When multiple values are available to adjust, [R] allows cycling through the different items in the setting.
-//       [SEL] confirms the new value and updates the field/EEPROM.
+//       When multiple values are available to adjust, [R] allows cycling through the
+//       different items in the setting. [SEL] confirms the new value and updates the
+//       field/EEPROM.
 //
 //  Each [L] Takes the user through status information.
 //
 //  Main -> [R][R] Setpoint 1 -> [U][D] Edits HH:MM *F -> [Up] Increase item selected
 //                                                  -> [Dn] Decrease item selected
-//                                                  -> [Lt] Move item selected or exit edit time unsaved.
-//                                                  -> [Rt] Move item selected to right
+//                                                  -> [L] ABORT and return to Home
+//                                                  status.
+//                                                  -> [R] Move item selected to right
 //                                                  -> [Sel] Save
 //
 
-using WaitForButtonPressFn = Button(*)(uint32_t timeout);
-using SettingFn = Button(*)();
-using GetDateFn = Date(*)();
+using WaitForButtonPressFn = Button (*)(uint32_t timeout);
+using SettingFn = Button (*)();
+using GetDateFn = Date (*)();
 
-// This menu operates on the second row of the LCD whereas the update function operates the HVAC and first row of the LCD.
+// This menu operates on the second row of the LCD whereas the update function operates
+// the HVAC and first row of the LCD.
 class Menus {
   public:
-    Menus(Settings *settings, WaitForButtonPressFn wait_for_button_press, RtcDate *rtc_date, LiquidCrystal* lcd) :
-      settings_(settings),
-      wait_for_button_press_(wait_for_button_press),
-      rtc_date_(rtc_date),
-      lcd_(lcd) {}
+    Menus(Settings *settings, WaitForButtonPressFn wait_for_button_press, RtcDate *rtc_date,
+          LiquidCrystal *lcd)
+      : settings_(settings),
+        wait_for_button_press_(wait_for_button_press),
+        rtc_date_(rtc_date),
+        lcd_(lcd) {}
     uint32_t changed_ms_ = millis();
-
 
     enum class Error {
       STATUS_OK,
@@ -47,19 +48,36 @@ class Menus {
       ShowStatus(Error::STATUS_OK);
     }
 
+    // This is shown as the final character of the first row. This is the only character in
+    // the first row used by the menus.
     void ShowStatus(const Error error) {
       static Error s_error = Error::STATUS_OK;
       static uint8_t s_counter = 0;
+
+      // An error gets latched on the screen until the thermostat is reset.
       if (error != Error::STATUS_OK) {
         s_error = error;
       }
 
+      // We use the last character in the first row.
       lcd_->setCursor(15, 0);
-
       if (s_error == Error::STATUS_OK) {
-        s_counter = (s_counter + 1) % 10;
-        lcd_->print(s_counter);
+        // Make an animation to allow a user to know the HVAC is still fully updating.
+        s_counter = (s_counter + 1) % 4;
+        if (s_counter == 0) {
+          lcd_->print('/');
+        }
+        if (s_counter == 1) {
+          lcd_->print('-');
+        }
+        if (s_counter == 2) {
+          lcd_->write(byte(1));  // Prints the '\', the LCD's '\' is the Yen symbol.
+        }
+        if (s_counter == 3) {
+          lcd_->write('|');
+        }
       } else {
+        // Show the error instead.
         switch (s_error) {
           case Error::BME_SENSOR_FAIL:
             lcd_->print('B');
@@ -73,7 +91,6 @@ class Menus {
         }
       }
     }
-
 
     void ShowStatuses() {
       uint8_t menu_index = 0;
@@ -92,19 +109,19 @@ class Menus {
           case 1:
             lcd_->setCursor(0, 1);
             lcd_->print("BME Temp: ");
-            lcd_->print(settings_->current_bme_temp_x10);
+            lcd_->print(settings_->current_bme_temperature_x10);
             button = wait_for_button_press_(10000);
             break;
           case 2:
             lcd_->setCursor(0, 1);
             lcd_->print("Dal Temp: ");
-            lcd_->print(settings_->current_temp_x10);
+            lcd_->print(settings_->current_temperature_x10);
             button = wait_for_button_press_(10000);
             break;
           case 3:
             lcd_->setCursor(0, 1);
-            lcd_->print("HVAC debug: ");
-            lcd_->print(settings_->hvac_debug);
+            lcd_->print("IAQ: ");
+            lcd_->print(settings_->air_quality_score);
             button = wait_for_button_press_(10000);
             break;
           case 4:
@@ -134,7 +151,6 @@ class Menus {
       }
     }
 
-
     void EditSettings() {
       ResetLine();
 
@@ -160,7 +176,7 @@ class Menus {
             button = SetSetpoint(1, Mode::HEAT);
             break;
           case 5:
-            button  = SetSetpoint(0, Mode::COOL);
+            button = SetSetpoint(0, Mode::COOL);
             break;
           case 6:
             button = SetSetpoint(1, Mode::COOL);
@@ -191,7 +207,6 @@ class Menus {
         }
       }
     }
-
 
     Button SetFan() {
       const bool initial_fan_setting = settings_->persisted.fan_always_on;
@@ -269,7 +284,8 @@ class Menus {
           case Button::DOWN:
             if (field == 0) {
               fan = false;
-              // Also change the fan temporarily. This makes it easer to change the fan speed.
+              // Also change the fan temporarily. This makes it easer to change the fan
+              // speed.
               settings_->persisted.fan_always_on = fan;
               SetChanged(settings_);
               break;
@@ -279,7 +295,8 @@ class Menus {
               // Fall through.
             }
           case Button::RIGHT:
-            // Only allow changing the extended fan time if the fan setting is set to auto (false).
+            // Only allow changing the extended fan time if the fan setting is set to auto
+            // (false).
             if ((field == 0 && fan == false) || (field == 1)) {
               field = (field + 1) % kTotalFields;
             }
@@ -288,7 +305,8 @@ class Menus {
             if (field == 0) {
               fan = true;
 
-              // Change the fan temporarily. This makes it easer to perform special fan speed changes.
+              // Change the fan temporarily. This makes it easer to perform special fan
+              // speed changes.
               settings_->persisted.fan_always_on = fan;
               settings_->persisted.fan_extend_mins = fan_extend_mins;
               SetChanged(settings_);
@@ -319,8 +337,6 @@ class Menus {
         update();
       }
     }
-
-
 
     Button SetSaveAllSettingsForDebug() {
       // Setup the display
@@ -366,7 +382,8 @@ class Menus {
     }
 
     Button SetMode() {
-      uint8_t mode = settings_->persisted.heat_enabled << 1 | settings_->persisted.cool_enabled;
+      uint8_t mode =
+        settings_->persisted.heat_enabled << 1 | settings_->persisted.cool_enabled;
 
       // Setup the display
       ResetLine();
@@ -415,7 +432,6 @@ class Menus {
       }
     }
 
-
     Button SetDate() {
       uint8_t field = 0;
       Date date = rtc_date_->Now();
@@ -456,10 +472,8 @@ class Menus {
         if (field == 2 && flash_state == true) {
           lcd_->print("__");
         } else {
-
           lcd_->print(daysOfTheWeek[date.day_of_week]);
         }
-
       };
 
       // First see if the user wants to change this item.
@@ -535,13 +549,19 @@ class Menus {
       }
     }
 
-
     Button SetSetpoint(const uint8_t setpoint, const Mode mode) {
       constexpr uint8_t kMaxFields = 3;
       uint8_t field = 0;
-      int temp_x10 = (mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].temp_x10 : settings_->persisted.cool_setpoints[setpoint].temp_x10;;
-      int hour = (mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].hour : settings_->persisted.cool_setpoints[setpoint].hour;
-      int minute = (mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].minute : settings_->persisted.cool_setpoints[setpoint].minute;
+      int temperature_x10 =
+        (mode == Mode::HEAT)
+        ? settings_->persisted.heat_setpoints[setpoint].temperature_x10
+        : settings_->persisted.cool_setpoints[setpoint].temperature_x10;
+      ;
+      int hour = (mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].hour
+                 : settings_->persisted.cool_setpoints[setpoint].hour;
+      int minute = (mode == Mode::HEAT)
+                   ? settings_->persisted.heat_setpoints[setpoint].minute
+                   : settings_->persisted.cool_setpoints[setpoint].minute;
       uint32_t flash_ms = millis();
       bool flash_state = false;
 
@@ -561,10 +581,10 @@ class Menus {
         if (field == 0 && flash_state == true) {
           lcd_->print("__");
         } else {
-          if (temp_x10 / 10 < 10) {
+          if (temperature_x10 / 10 < 10) {
             lcd_->print("0");
           }
-          lcd_->print(temp_x10 / 10);
+          lcd_->print(temperature_x10 / 10);
         }
 
         lcd_->print(".");
@@ -572,7 +592,7 @@ class Menus {
         if (field == 0 && flash_state == true) {
           lcd_->print("_");
         } else {
-          lcd_->print(temp_x10 % 10);
+          lcd_->print(temperature_x10 % 10);
         }
         // Print custom degree symbol.
         lcd_->write(byte(0));
@@ -595,7 +615,6 @@ class Menus {
           }
           lcd_->print(minute);
         }
-
       };
 
       // First see if the user wants to change this item.
@@ -632,7 +651,8 @@ class Menus {
             field = (field + 1) % kMaxFields;
             break;
           case Button::DOWN:
-            // Use the same logic as Button::UP, except that the value will be decremented instead of incremented.
+            // Use the same logic as Button::UP, except that the value will be decremented
+            // instead of incremented.
             increment = -1;
           // Fall through.
           case Button::UP:
@@ -642,7 +662,7 @@ class Menus {
 
             switch (field) {
               case 0:
-                temp_x10 += increment;
+                temperature_x10 += increment;
                 break;
               case 1:
                 hour += increment;
@@ -656,11 +676,13 @@ class Menus {
             break;
           case Button::SELECT:
             if (mode == Mode::HEAT) {
-              settings_->persisted.heat_setpoints[setpoint].temp_x10 = temp_x10;
+              settings_->persisted.heat_setpoints[setpoint].temperature_x10 =
+                temperature_x10;
               settings_->persisted.heat_setpoints[setpoint].hour = hour;
               settings_->persisted.heat_setpoints[setpoint].minute = minute;
             } else {
-              settings_->persisted.cool_setpoints[setpoint].temp_x10 = temp_x10;
+              settings_->persisted.cool_setpoints[setpoint].temperature_x10 =
+                temperature_x10;
               settings_->persisted.cool_setpoints[setpoint].hour = hour;
               settings_->persisted.cool_setpoints[setpoint].minute = minute;
             }
@@ -833,12 +855,12 @@ class Menus {
             flash_ms = millis();
 
             // Limit the value to a max of 50%.
-            if (val >= 50 && increment > 0 ) {
+            if (val >= 50 && increment > 0) {
               break;
             }
 
             // Limit the value to a max of 50%.
-            if (val <= 0 && increment < 0 ) {
+            if (val <= 0 && increment < 0) {
               break;
             }
             val += increment;
@@ -887,10 +909,12 @@ class Menus {
         if (button != Button::NONE && button != Button::TIMEOUT) {
           return button;
         }
-
       }
     }
 
+    // Allows changing the manual temperature override.
+    //
+    // This is called when the user presses Up/Down on the main informational status page.
     Button EditOverrideTemp() {
       const Date date = rtc_date_->Now();
       while (true) {
@@ -898,7 +922,7 @@ class Menus {
         lcd_->print("Override: ");
         // print the number of seconds since reset:
         lcd_->setCursor(10, 1);
-        int temp = GetSetpointTemp(*settings_, date, Mode::HEAT);
+        int temp = GetOverrideTemp(*settings_);
         lcd_->print(static_cast<int>(temp) / 10, DEC);
         lcd_->print(".");
         lcd_->print(static_cast<int>(temp) % 10, DEC);
@@ -920,20 +944,12 @@ class Menus {
       }
     }
 
-
-
-    enum class SubState {
-      FIRST,
-      SECOND,
-      THIRD,
-    };
-
   private:
+    // Helper to reset the menu managed second row.
     void ResetLine() {
       lcd_->setCursor(0, 1);
       lcd_->print("                ");
       lcd_->setCursor(0, 1);
-
     }
 
     Button WaitBeforeEdit() {
@@ -958,7 +974,6 @@ class Menus {
     WaitForButtonPressFn wait_for_button_press_;
     RtcDate *rtc_date_;
     LiquidCrystal *lcd_;
-
 };
 
-#endif // MENUS_H_
+#endif  // MENUS_H_

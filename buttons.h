@@ -1,20 +1,13 @@
 #ifndef BUTTONS_H_
 #define BUTTONS_H_
 
-
 #include "millis_since.h"
 
-enum class Button {
-  NONE,
-  SELECT,
-  RIGHT,
-  LEFT,
-  UP,
-  DOWN,
-  TIMEOUT
-};
+enum class Button { NONE, SELECT, RIGHT, LEFT, UP, DOWN, TIMEOUT };
 
-// Helper for managing the 1602 shield analog buttons. This performs button debouncing and enables two levels of automatic button presses when a button is held longer than a few seconds to allow quicker cycling through the values.
+// Helper for managing the 1602 shield analog buttons. This performs button debouncing and
+// enables two levels of automatic button presses when a button is held longer than a few
+// seconds to allow quicker cycling through the values.
 class Buttons {
   public:
     // Returns a human readable button character for serial output debugging.
@@ -46,7 +39,7 @@ class Buttons {
       if (analogValue < 400) {
         return Button::DOWN;
       }
-      if (analogValue < 600 ) {
+      if (analogValue < 600) {
         return Button::LEFT;
       }
       if (analogValue < 800) {
@@ -80,7 +73,8 @@ class Buttons {
       return active;
     }
 
-    // Returns a single press event per button down with automatic hold auto-presses after holding 5 seconds.
+    // Returns a single press event per button down with automatic hold auto-presses after
+    // holding 5 seconds.
     //
     // The user specified button argument should be stabilized with hysteresis.
     static Button GetSinglePress(const Button button) {
@@ -125,4 +119,4 @@ class Buttons {
     uint32_t started_at_ms;
 };
 
-#endif // BUTTONS_H_
+#endif  // BUTTONS_H_
