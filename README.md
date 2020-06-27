@@ -15,6 +15,7 @@ Arduino Home thermostat control with heat, cool, fan, and humidity controls
  - Configurable tolerance for how much temperature the can fluctuate before HVAC turns on.
  - Displays HVAC on time percentage over the last 10 on/off cycles.
  - Displays Indoor Air Quality.
+ - Standard 5 minute lockout when switching between cooling and heating too quickly.
 
 # Implementation
 
