@@ -1,6 +1,9 @@
-#ifndef DALLAS_H_
-#define DALLAS_H_
+#ifndef AVR_IMPLS_H_
+#define AVR_IMPLS_H_
+// This header file implements the AVR and hardware logic needed to run on the actual thermostat.
 
+#include <LiquidCrystal.h>
+#include <Adafruit_BME680.h>
 #include <DallasTemperature.h>
 #include "interfaces.h"
 #include "uRTCLib.h"
@@ -263,4 +266,4 @@ class SsdRelays: public Relays {
 };
 
 }
-#endif  // DALLAS_H_
+#endif  // AVR_IMPLS_H_

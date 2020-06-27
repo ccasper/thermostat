@@ -1,5 +1,6 @@
 #ifndef MENUS_H_
 #define MENUS_H_
+// This header implements useful menus to allow the user to change settings and view statuses.
 
 #include "buttons.h"
 #include "events.h"

@@ -1,5 +1,5 @@
-#ifndef DRIFT_DETECTOR_H_
-#define DRIFT_DETECTOR_H_
+#ifndef EVENTS_H_
+#define EVENTS_H_
 // Helpers to manage the Events struct for performing calculations and creating new events
 // whena applicable.
 
@@ -261,4 +261,4 @@ static uint32_t CalculateSeconds(const bool running, const Settings& settings,
 //}
 
 }
-#endif
+#endif // EVENTS_H_

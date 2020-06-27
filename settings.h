@@ -1,5 +1,6 @@
 #ifndef SETTINGS_H_
 #define SETTINGS_H_
+// This header implements the object and helper functions to store user settings and HVAC control and status information.
 
 #include <EEPROM.h>
 

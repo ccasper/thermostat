@@ -1,6 +1,7 @@
 #ifndef MAINTAIN_HVAC_H_
 #define MAINTAIN_HVAC_H_
 
+// This is the core logic that makes the thermostat's HVAC system function.
 namespace thermostat {
 
 constexpr uint32_t kManualTemperatureOverrideDuration = Clock::HoursToMillis(2);

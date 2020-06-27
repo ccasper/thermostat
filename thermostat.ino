@@ -68,60 +68,72 @@ SIGNAL(TIMER0_COMPA_vect) {
 // bugs.
 static_assert(sizeof(int) == 2);
 
-thermostat::Settings g_settings = thermostat::GetEepromOrDefaultSettings();
+using namespace thermostat;
 
-thermostat::SsdRelays g_relays = thermostat::SsdRelays();
+// Restore the settings to use for the thermostat.
+Settings g_settings = GetEepromOrDefaultSettings();
 
-thermostat::DallasSensor g_dallas_sensor;
+// Create the relays controller.
+SsdRelays g_relays = SsdRelays();
 
-thermostat::BmeSensor g_bme_sensor;
+// Create the temperature sensor
+DallasSensor g_dallas_sensor;
 
-thermostat::Lcd g_lcd;
+// Create the temperature/humidity/gas quality sensor.
+BmeSensor g_bme_sensor;
 
-thermostat::RealClock g_clock;
+// Create the LCD display output.
+Lcd g_lcd;
 
-thermostat::FanController g_fan;
+// Create the clock with the real time device.
+RealClock g_clock;
 
+// Create the fan controller, which is independent of the heat/cool control.
+FanController g_fan;
 
 void setup() {
-  // Add a extra Timer0 interrupt for IRQ stuff.
+  // Add an extra Timer0 interrupt for the backlight dimming.
   CustomInterruptSetup();
+
+  // Setup the relay ports.
   g_relays.Setup();
 
   Serial.begin(9600);
   Wire.begin();
 
+  // Setup the bme sensor hardware,
   g_bme_sensor.Setup();
 
   sei();
 
+  // Setup the LCD and custom characters.
   g_lcd.Setup();
 }
 
-// Waits for a button press while maintaining the HVAC system.
+// Waits for a button press or specified timeout while maintaining calls to the HVAC system.
 //
-// Menus use this to ensure sleeping always updates the HVAC routine.
-thermostat::Button WaitForButtonPress(const uint32_t timeout) {
+// Menus use this to ensure blocking behaviors continue maintaining HVAC control.
+Button WaitForButtonPress(const uint32_t timeout) {
   const uint32_t start = g_clock.Millis();
-  thermostat::Button button = thermostat::Button::NONE;
+  Button button = Button::NONE;
 
-  while (button == thermostat::Button::NONE) {
-    thermostat::Error error = thermostat::MaintainHvac(&g_settings, &g_clock, &g_lcd, &g_relays, &g_fan, &g_bme_sensor, &g_dallas_sensor);
+  while (button == Button::NONE) {
+    Error error = MaintainHvac(&g_settings, &g_clock, &g_lcd, &g_relays, &g_fan, &g_bme_sensor, &g_dallas_sensor);
     // Skip the status update when maintain hvac was skipped.
-    if (error != thermostat::Error::STATUS_NONE) {
+    if (error != Error::STATUS_NONE) {
       ShowStatus(&g_lcd, error);
     }
 
     // Poll for single button presses.
-    button = thermostat::Buttons::GetSinglePress(
-               thermostat::Buttons::StabilizedButtonPressed(thermostat::Buttons::GetButton(analogRead(0))), g_clock.Millis());
+    button = Buttons::GetSinglePress(
+               Buttons::StabilizedButtonPressed(Buttons::GetButton(analogRead(0))), g_clock.Millis());
 
     if (g_clock.millisSince(start) >= timeout) {
-      return thermostat::Button::TIMEOUT;
+      return Button::TIMEOUT;
     }
   }
 
-  // If a button was pressed, turn on the backlight for some length of time.
+  // When a button is pressed, turn on the backlight for some length of time.
   g_backlight_count = 10000;
 
   return button;
@@ -132,28 +144,28 @@ thermostat::Button WaitForButtonPress(const uint32_t timeout) {
 // fields.
 //
 // All blocking calls use WaitForButtonPress to ensure MaintainHvac is always periodically called.
-thermostat::Menus menu(&g_settings, &WaitForButtonPress, &g_clock, &g_lcd);
+Menus menu(&g_settings, &WaitForButtonPress, &g_clock, &g_lcd);
 
 
 void loop() {
   // Show basic time information in the bottom row.
   //
   // This is blocking.
-  const thermostat::Button button = menu.InformationalState();
+  const Button button = menu.InformationalState();
 
   // Override the temperature.
-  if (button == thermostat::Button::UP || button == thermostat::Button::DOWN) {
+  if (button == Button::UP || button == Button::DOWN) {
     // This is blocking.
     menu.EditOverrideTemp();
   }
 
-  if (button == thermostat::Button::LEFT) {
+  if (button == Button::LEFT) {
     // Go through the statuses.
     //
     // This is blocking.
     menu.ShowStatuses();
   }
-  if (button == thermostat::Button::RIGHT) {
+  if (button == Button::RIGHT) {
     // Go through the edit options.
     //
     // This is blocking.

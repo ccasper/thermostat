@@ -1,14 +1,10 @@
 #ifndef INTERFACES_H_
 #define INTERFACES_H_
 
-#include <LiquidCrystal.h>
-#include <Adafruit_BME680.h>
-
-// This class defines interfaces that are not hardware dependent.
+// This class defines interfaces that are hardware agnostic.
 //
-// This allows unit testing of non-hardware related logic.
+// This allows unit testing to use mock like interfaces to test much of the logic.
 namespace thermostat {
-
 
 enum class Error {
   STATUS_NONE,

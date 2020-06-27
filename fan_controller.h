@@ -1,5 +1,6 @@
 #ifndef FAN_CONTROLLER_H_
 #define FAN_CONTROLLER_H_
+# This helper manages the HVAC fan control for extending circulation and periodically running the fan even when HVAC is off.
 
 #include "settings.h"
 
