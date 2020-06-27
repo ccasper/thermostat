@@ -3,8 +3,8 @@
 
 #include "comparison.h"
 
-// TODO: Verify this works as intended.
-//
+namespace thermostat {
+
 // I hand rolled this implementation, but I am aware of another IAQ implementation at
 // https://github.com/G6EJD/BME680-Example that this could be compared against.
 float CalculateIaqScore(const float bme680_humidity, const uint32_t bme680_resistance) {
@@ -39,4 +39,5 @@ float CalculateIaqScore(const float bme680_humidity, const uint32_t bme680_resis
   return (resistance_weight * gas_resistance) + humidity_weight * humidity_quality;
 }
 
+}
 #endif  // CALCULATE_IAQ_SCORE_H_

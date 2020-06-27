@@ -3,7 +3,9 @@
 
 #include <EEPROM.h>
 
-#include "millis_since.h"
+#include "interfaces.h"
+
+namespace thermostat {
 
 // 65536 is the largest representable value.
 constexpr uint16_t VERSION = 34806;
@@ -18,11 +20,6 @@ struct Setpoint {
   int temperature_x10 = 0;
 };
 
-struct Date {
-  uint8_t hour = 0;
-  uint8_t minute = 0;
-  uint8_t day_of_week = 0;
-};
 
 struct PersistedSettings {
   PersistedSettings()
@@ -45,7 +42,7 @@ struct PersistedSettings {
   Setpoint cool_setpoints[2];
   int tolerance_x10 = 15;  // 1.5 degrees above and below.
 
-  int fan_extend_mins = 5;
+  uint16_t fan_extend_mins = 5;
 };
 
 // List of events for temperature change calculations.
@@ -201,76 +198,13 @@ static int GetOverrideTemp(const Settings& settings) {
 
 // Overrides and temperature based on the current setpoint temperature the changed flag
 // for faster updating.
-static void SetOverrideTemp(int amount, Settings* settings, const Date& date) {
+static void SetOverrideTemp(int amount, Settings* settings, const uint32_t now, const Date& date) {
   // Bound the value to 40.0-99.9.
   settings->override_temperature_x10 =
     max(400, min(999, GetOverrideTemp(*settings) + amount));
-  settings->override_temperature_started_ms = millis();
+  settings->override_temperature_started_ms = now;
 }
 
-// This checks if we should be in a 5 minute lockout when switching from cooling to
-// heating or heating to cooling.
-static bool IsInLockoutMode(const Mode mode, const Event* events,
-                            const uint8_t events_size) {
-  constexpr uint32_t kLockoutMs = 5UL * 60UL * 1000UL;
-  uint8_t index = 0;
-  uint32_t millis_since = 0xFFFFFFFF;  // some big number
-
-  // Find the newest event.
-  for (int i = 0; i < events_size; ++i) {
-    if (events[i].empty) {
-      continue;
-    }
-    if (millisSince(events[i].start_time) < millis_since) {
-      millis_since = millisSince(events[i].start_time);
-      index = i;
-    }
-  }
-
-  // Are there any events found?
-  if (millis_since == 0xFFFFFFFF) {
-    return false;
-  }
-  // If the current event is greater than we're out of the window.
-  if (millis_since > kLockoutMs) {
-    return false;
-  }
-
-  // Are we actively heating or cooling?
-  if (mode == Mode::COOL && millis_since < kLockoutMs && events[index].heat) {
-    return true;
-  }
-  if (mode == Mode::HEAT && millis_since < kLockoutMs && events[index].cool) {
-    return true;
-  }
-
-  // Keep looking back until we're beyond the window..
-  while (true) {
-    index = (index - 1) % events_size;
-    // The previous event is empty.
-    if (events[index].empty) {
-      return false;
-    }
-
-    // We use the started time of the newer event to know when it stopped.
-    if (mode == Mode::COOL && events[index].heat) {
-      return true;
-    }
-
-    if (mode == Mode::HEAT && events[index].cool) {
-      return true;
-    }
-
-    // use the start time for the next previous event as it's stop time.
-    millis_since = millisSince(events[index].start_time);
-
-    if (millis_since > kLockoutMs) {
-      return false;
-    }
-  }
-
-  return false;
-}
 
 // Gets the current setpoint temperature based on current date and any set override.
 static int GetSetpointTemp(const Settings& settings, const Date& date, const Mode mode) {
@@ -303,4 +237,5 @@ static int GetSetpointTemp(const Settings& settings, const Date& date, const Mod
   return max(400, min(999, temp));
 }
 
+}
 #endif  // SETTINGS_H_

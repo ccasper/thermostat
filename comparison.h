@@ -1,6 +1,8 @@
 #ifndef COMPARISON_H_
 #define COMPARISON_H_
 
+namespace thermostat {
+
 // The max/min for Arduino do not work correctly and therefore we define these as
 // replacements.
 //
@@ -19,5 +21,7 @@
     __typeof__(b) _b = (b); \
     _a < _b ? _a : _b;      \
   })
+
+}
 
 #endif  // COMPARISON_H_

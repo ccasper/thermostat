@@ -2,9 +2,10 @@
 #define MENUS_H_
 
 #include "buttons.h"
-#include "events_processing.h"
-#include "rtc_date.h"
+#include "events.h"
+#include "avr_impls.h"
 #include "settings.h"
+#include "interfaces.h"
 //
 //  Each [R] press takes the user through editable settings.
 //       Pressing [U] or [D] causes edit mode to be enabled.
@@ -22,6 +23,8 @@
 //                                                  -> [Sel] Save
 //
 
+namespace thermostat {
+
 using WaitForButtonPressFn = Button (*)(uint32_t timeout);
 using SettingFn = Button (*)();
 using GetDateFn = Date (*)();
@@ -30,67 +33,12 @@ using GetDateFn = Date (*)();
 // the HVAC and first row of the LCD.
 class Menus {
   public:
-    Menus(Settings *settings, WaitForButtonPressFn wait_for_button_press, RtcDate *rtc_date,
-          LiquidCrystal *lcd)
+    Menus(Settings *settings, WaitForButtonPressFn wait_for_button_press, Clock *clock,
+          Display *display)
       : settings_(settings),
         wait_for_button_press_(wait_for_button_press),
-        rtc_date_(rtc_date),
-        lcd_(lcd) {}
-    uint32_t changed_ms_ = millis();
-
-    enum class Error {
-      STATUS_OK,
-      BME_SENSOR_FAIL,
-      HEAT_AND_COOL,
-    };
-
-    void ShowStatus() {
-      ShowStatus(Error::STATUS_OK);
-    }
-
-    // This is shown as the final character of the first row. This is the only character in
-    // the first row used by the menus.
-    void ShowStatus(const Error error) {
-      static Error s_error = Error::STATUS_OK;
-      static uint8_t s_counter = 0;
-
-      // An error gets latched on the screen until the thermostat is reset.
-      if (error != Error::STATUS_OK) {
-        s_error = error;
-      }
-
-      // We use the last character in the first row.
-      lcd_->setCursor(15, 0);
-      if (s_error == Error::STATUS_OK) {
-        // Make an animation to allow a user to know the HVAC is still fully updating.
-        s_counter = (s_counter + 1) % 4;
-        if (s_counter == 0) {
-          lcd_->print('/');
-        }
-        if (s_counter == 1) {
-          lcd_->print('-');
-        }
-        if (s_counter == 2) {
-          lcd_->write(byte(1));  // Prints the '\', the LCD's '\' is the Yen symbol.
-        }
-        if (s_counter == 3) {
-          lcd_->write('|');
-        }
-      } else {
-        // Show the error instead.
-        switch (s_error) {
-          case Error::BME_SENSOR_FAIL:
-            lcd_->print('B');
-            break;
-          case Error::HEAT_AND_COOL:
-            lcd_->print('b');
-            break;
-          default:
-            lcd_->print('X');
-            break;
-        }
-      }
-    }
+        clock_(clock),
+        display_(display) {}
 
     void ShowStatuses() {
       uint8_t menu_index = 0;
@@ -101,37 +49,37 @@ class Menus {
         Button button;
         switch (menu_index) {
           case 0:
-            lcd_->setCursor(0, 1);
-            lcd_->print("On ratio: ");
-            lcd_->print(OnPercent(*settings_));
+            display_->SetCursor(0, 1);
+            display_->Print("On ratio: ");
+            display_->Print(OnPercent(*settings_, clock_->Millis()));
             button = wait_for_button_press_(10000);
             break;
           case 1:
-            lcd_->setCursor(0, 1);
-            lcd_->print("BME Temp: ");
-            lcd_->print(settings_->current_bme_temperature_x10);
+            display_->SetCursor(0, 1);
+            display_->Print("BME Temp: ");
+            display_->Print(settings_->current_bme_temperature_x10);
             button = wait_for_button_press_(10000);
             break;
           case 2:
-            lcd_->setCursor(0, 1);
-            lcd_->print("Dal Temp: ");
-            lcd_->print(settings_->current_temperature_x10);
+            display_->SetCursor(0, 1);
+            display_->Print("Dal Temp: ");
+            display_->Print(settings_->current_temperature_x10);
             button = wait_for_button_press_(10000);
             break;
           case 3:
-            lcd_->setCursor(0, 1);
-            lcd_->print("IAQ: ");
-            lcd_->print(settings_->air_quality_score);
+            display_->SetCursor(0, 1);
+            display_->Print("IAQ: ");
+            display_->Print(settings_->air_quality_score);
             button = wait_for_button_press_(10000);
             break;
           case 4:
-            lcd_->setCursor(0, 1);
-            lcd_->print("Status 4: ");
+            display_->SetCursor(0, 1);
+            display_->Print("Status 4: ");
             button = wait_for_button_press_(10000);
             break;
           case 5:
-            lcd_->setCursor(0, 1);
-            lcd_->print("Status 5: ");
+            display_->SetCursor(0, 1);
+            display_->Print("Status 5: ");
             button = wait_for_button_press_(10000);
             break;
         }
@@ -214,9 +162,9 @@ class Menus {
 
       uint8_t field = 0;
       constexpr uint8_t kTotalFields = 2;
-      int fan_extend_mins = settings_->persisted.fan_extend_mins;
+      uint16_t fan_extend_mins = settings_->persisted.fan_extend_mins;
 
-      uint32_t flash_ms = millis();
+      uint32_t flash_ms = clock_->Millis();
       bool flash_state = false;
 
       int timeout_counter = 0;
@@ -225,37 +173,37 @@ class Menus {
       // "Fan: EXT:060m"
       // "Fan: ON     "
       ResetLine();
-      lcd_->print("Fan: ");
+      display_->Print("Fan: ");
       auto update = [&]() {
-        lcd_->setCursor(5, 1);
-        if (millisSince(flash_ms) > 500) {
+        display_->SetCursor(5, 1);
+        if (clock_->millisSince(flash_ms) > 500) {
           flash_state = !flash_state;
           flash_ms = millis();
         }
 
         // Print the Fan On/Off status.
         if (field == 0 && flash_state == true) {
-          lcd_->print("___ ");
+          display_->Print("___ ");
         } else {
-          lcd_->print(fan ? "ON  " : "EXT:");
+          display_->Print(fan ? "ON  " : "EXT:");
         }
 
         // Print the extended fan time.
         //
         // When the fan is always on, hide the extended minutes.
         if (fan == true) {
-          lcd_->print("    ");
+          display_->Print("    ");
         } else if (field == 1 && flash_state == true) {
-          lcd_->print("___m");
+          display_->Print("___m");
         } else {
           if (fan_extend_mins < 100) {
-            lcd_->print("0");
+            display_->Print("0");
           }
           if (fan_extend_mins < 10) {
-            lcd_->print("0");
+            display_->Print("0");
           }
-          lcd_->print(fan_extend_mins);
-          lcd_->print("m");
+          display_->Print(fan_extend_mins);
+          display_->Print("m");
         }
       };
       // First see if the user wants to change this item.
@@ -341,7 +289,7 @@ class Menus {
     Button SetSaveAllSettingsForDebug() {
       // Setup the display
       ResetLine();
-      lcd_->print("Save for debug?");
+      display_->Print("Save for debug?");
 
       while (true) {
         const Button button = wait_for_button_press_(10000);
@@ -361,7 +309,7 @@ class Menus {
     Button SetPrintAllAllSettingsForDebug() {
       // Setup the display
       ResetLine();
-      lcd_->print("Print debug settings?");
+      display_->Print("Print debug settings?");
 
       while (true) {
         const Button button = wait_for_button_press_(10000);
@@ -371,7 +319,7 @@ class Menus {
           case Button::SELECT:
             OutputAllSettingsForDebug();
             ResetLine();
-            lcd_->print("See serial output...");
+            display_->Print("See serial output...");
             wait_for_button_press_(1000);
             return Button::NONE;
             break;
@@ -387,12 +335,12 @@ class Menus {
 
       // Setup the display
       ResetLine();
-      lcd_->print("Mode: ");
+      display_->Print("Mode: ");
 
       // Draw the value.
       auto update = [&]() {
-        lcd_->setCursor(5, 1);
-        lcd_->print(mode == 3 ? "BOTH" : mode == 2 ? "HEAT" : mode == 1 ? "COOL" : "OFF ");
+        display_->SetCursor(5, 1);
+        display_->Print(mode == 3 ? "BOTH" : mode == 2 ? "HEAT" : mode == 1 ? "COOL" : "OFF ");
       };
       update();
 
@@ -434,45 +382,45 @@ class Menus {
 
     Button SetDate() {
       uint8_t field = 0;
-      Date date = rtc_date_->Now();
+      Date date = clock_->Now();
       uint32_t flash_ms = millis();
       bool flash_state = false;
 
       ResetLine();
-      lcd_->print("Date: ");
+      display_->Print("Date: ");
       auto update = [&]() {
-        lcd_->setCursor(6, 1);
-        if (millisSince(flash_ms) > 500) {
+        display_->SetCursor(6, 1);
+        if (clock_->millisSince(flash_ms) > 500) {
           flash_state = !flash_state;
           flash_ms = millis();
         }
 
         // 00:00 Mo
         if (field == 0 && flash_state == true) {
-          lcd_->print("__");
+          display_->Print("__");
         } else {
           if (date.hour < 10) {
-            lcd_->print("0");
+            display_->Print("0");
           }
-          lcd_->print(date.hour);
+          display_->Print(date.hour);
         }
 
-        lcd_->print(":");
+        display_->Print(":");
 
         if (field == 1 && flash_state == true) {
-          lcd_->print("__");
+          display_->Print("__");
         } else {
           if (date.minute < 10) {
-            lcd_->print("0");
+            display_->Print("0");
           }
-          lcd_->print(date.minute);
+          display_->Print(date.minute);
         }
-        lcd_->write(" ");
+        display_->Write(' ');
 
         if (field == 2 && flash_state == true) {
-          lcd_->print("__");
+          display_->Print("__");
         } else {
-          lcd_->print(daysOfTheWeek[date.day_of_week]);
+          display_->Print(daysOfTheWeek[date.day_of_week]);
         }
       };
 
@@ -533,7 +481,7 @@ class Menus {
             break;
           case Button::SELECT:
             // Update the settings data.
-            rtc_date_->Set(date);
+            clock_->Set(date);
             SetChangedAndPersist(settings_);
             PrintUpdatedAndWait();
             return Button::NONE;
@@ -566,54 +514,54 @@ class Menus {
       bool flash_state = false;
 
       ResetLine();
-      lcd_->print((mode == Mode::HEAT) ? "H" : "C");
+      display_->Print((mode == Mode::HEAT) ? "H" : "C");
       auto update = [&]() {
-        lcd_->setCursor(1, 1);
-        lcd_->print(setpoint + 1);
-        lcd_->print(":");
+        display_->SetCursor(1, 1);
+        display_->Print(setpoint + 1);
+        display_->Print(":");
 
-        if (millisSince(flash_ms) > 500) {
+        if (clock_->millisSince(flash_ms) > 500) {
           flash_state = !flash_state;
           flash_ms = millis();
         }
 
         // 00.0^ 00:00
         if (field == 0 && flash_state == true) {
-          lcd_->print("__");
+          display_->Print("__");
         } else {
           if (temperature_x10 / 10 < 10) {
-            lcd_->print("0");
+            display_->Write('0');
           }
-          lcd_->print(temperature_x10 / 10);
+          display_->Print(temperature_x10 / 10);
         }
 
-        lcd_->print(".");
+        display_->Write('.');
 
         if (field == 0 && flash_state == true) {
-          lcd_->print("_");
+          display_->Print("_");
         } else {
-          lcd_->print(temperature_x10 % 10);
+          display_->Print(temperature_x10 % 10);
         }
         // Print custom degree symbol.
-        lcd_->write(byte(0));
+        display_->Write(byte(0));
 
-        lcd_->print(" ");
+        display_->Write(' ');
         if (field == 1 && flash_state == true) {
-          lcd_->print("__");
+          display_->Print("__");
         } else {
           if (hour < 10) {
-            lcd_->print("0");
+            display_->Print("0");
           }
-          lcd_->print(hour);
+          display_->Print(hour);
         }
-        lcd_->print(":");
+        display_->Print(":");
         if (field == 2 && flash_state == true) {
-          lcd_->print("__");
+          display_->Print("__");
         } else {
           if (minute < 10) {
-            lcd_->print("0");
+            display_->Print("0");
           }
-          lcd_->print(minute);
+          display_->Print(minute);
         }
       };
 
@@ -708,29 +656,29 @@ class Menus {
       bool flash_state = false;
 
       ResetLine();
-      lcd_->print("Tolerance: ");
+      display_->Print("Tolerance: ");
       // Updates the display for the changed fields.
       auto update = [&]() {
-        lcd_->setCursor(11, 1);
+        display_->SetCursor(11, 1);
 
-        if (millisSince(flash_ms) > 500) {
+        if (clock_->millisSince(flash_ms) > 500) {
           flash_state = !flash_state;
           flash_ms = millis();
         }
 
         // Tolerance: 00.0^
         if (flash_state == true) {
-          lcd_->print("__._");
+          display_->Print("__._");
         } else {
           if (val / 10 < 10) {
-            lcd_->print("0");
+            display_->Print("0");
           }
-          lcd_->print(val / 10);
-          lcd_->print(".");
-          lcd_->print(val % 10);
+          display_->Print(val / 10);
+          display_->Print(".");
+          display_->Print(val % 10);
         }
         // Print custom degree symbol.
-        lcd_->write(byte(0));
+        display_->Write(byte(0));
       };
 
       update();
@@ -795,27 +743,27 @@ class Menus {
       bool flash_state = false;
 
       ResetLine();
-      lcd_->print("Humidify: ");
+      display_->Print("Humidify: ");
       // Updates the display for the changed fields.
       auto update = [&]() {
-        lcd_->setCursor(10, 1);
+        display_->SetCursor(10, 1);
 
-        if (millisSince(flash_ms) > 500) {
+        if (clock_->millisSince(flash_ms) > 500) {
           flash_state = !flash_state;
           flash_ms = millis();
         }
 
         // Tolerance: 00%
         if (flash_state == true) {
-          lcd_->print("__");
+          display_->Print("__");
         } else {
           if (val < 10) {
-            lcd_->print("0");
+            display_->Print("0");
           }
-          lcd_->print(val);
+          display_->Print(val);
         }
         // Print custom degree symbol.
-        lcd_->write("%");
+        display_->Write('%');
       };
 
       update();
@@ -887,22 +835,22 @@ class Menus {
     Button InformationalState() {
       while (true) {
         // Display the status information.
-        Date date = rtc_date_->Now();
+        Date date = clock_->Now();
         int hours = date.hour;
         int minutes = date.minute;
-        lcd_->setCursor(0, 1);
-        lcd_->print("Time: ");
+        display_->SetCursor(0, 1);
+        display_->Print("Time: ");
         if (hours < 10) {
-          lcd_->print("0");
+          display_->Print("0");
         }
-        lcd_->print(hours);
-        lcd_->print(":");
+        display_->Print(hours);
+        display_->Print(":");
         if (minutes < 10) {
-          lcd_->print("0");
+          display_->Print("0");
         }
-        lcd_->print(minutes);
+        display_->Print(minutes);
 
-        lcd_->print("      ");
+        display_->Print("      ");
 
         Button button = wait_for_button_press_(2000);
 
@@ -916,26 +864,26 @@ class Menus {
     //
     // This is called when the user presses Up/Down on the main informational status page.
     Button EditOverrideTemp() {
-      const Date date = rtc_date_->Now();
+      const Date date = clock_->Now();
       while (true) {
-        lcd_->setCursor(0, 1);
-        lcd_->print("Override: ");
+        display_->SetCursor(0, 1);
+        display_->Print("Override: ");
         // print the number of seconds since reset:
-        lcd_->setCursor(10, 1);
+        display_->SetCursor(10, 1);
         int temp = GetOverrideTemp(*settings_);
-        lcd_->print(static_cast<int>(temp) / 10, DEC);
-        lcd_->print(".");
-        lcd_->print(static_cast<int>(temp) % 10, DEC);
-        lcd_->write(byte(0));
-        lcd_->write(" ");
+        display_->Print(static_cast<int>(temp) / 10);
+        display_->Print(".");
+        display_->Print(static_cast<int>(temp) % 10);
+        display_->Write(byte(0));
+        display_->Write(' ');
 
         const Button button = wait_for_button_press_(10000);
         switch (button) {
           case Button::UP:
-            SetOverrideTemp(1, settings_, date);
+            SetOverrideTemp(1, settings_, clock_->Millis(), date);
             continue;
           case Button::DOWN:
-            SetOverrideTemp(-1, settings_, date);
+            SetOverrideTemp(-1, settings_, clock_->Millis(), date);
             continue;
           default:
             break;
@@ -947,9 +895,9 @@ class Menus {
   private:
     // Helper to reset the menu managed second row.
     void ResetLine() {
-      lcd_->setCursor(0, 1);
-      lcd_->print("                ");
-      lcd_->setCursor(0, 1);
+      display_->SetCursor(0, 1);
+      display_->Print("                ");
+      display_->SetCursor(0, 1);
     }
 
     Button WaitBeforeEdit() {
@@ -966,14 +914,15 @@ class Menus {
 
     void PrintUpdatedAndWait() {
       ResetLine();
-      lcd_->print("Updated...");
+      display_->Print("Updated...");
       wait_for_button_press_(1000);
     }
 
     Settings *settings_;
     WaitForButtonPressFn wait_for_button_press_;
-    RtcDate *rtc_date_;
-    LiquidCrystal *lcd_;
+    Clock *clock_;
+    Display *display_;
 };
 
+}
 #endif  // MENUS_H_
