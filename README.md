@@ -1,6 +1,8 @@
 # Arduino DIY Thermostat
 Arduino Home thermostat control with heat, cool, fan, and humidity controls
 
+This is in active use in my Wisconsin house with a Bryant 95s gas furnace with Lennox A/C and Honeywell Humidifier. Any furnace, humidifier, or air conditioning make/model should work with this thermostat. It was a drop in replacement for my standard thermostat.
+
 ![Thermostat LCD](https://github.com/ccasper/thermostat/blob/master/screenshots/display_lcd.jpg?raw=true)
 
 # Configurable Settings:
@@ -21,6 +23,11 @@ Arduino Home thermostat control with heat, cool, fan, and humidity controls
  - Backlight brightness reduction
  - Spinner at top right to see that the HVAC control is working.
  - Current time display
+ - Temperature in Fahrenheit (but can be changed in code.
+ - Temperature display in tenths of a degree.
+ - Humidity display in relative humidity.
+ - Displays when Heat, Fan, and Cooling are enabled
+ - Operates on 5V, 24V or 120V furnace signals. Most modern furnaces are 24V.
 
 # Implementation
 
