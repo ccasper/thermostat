@@ -1,6 +1,10 @@
 #ifndef INTERFACES_H_
 #define INTERFACES_H_
 
+#define UNUSED(x) (void)(x)
+
+#include "print.h"
+
 // This class defines interfaces that are hardware agnostic.
 //
 // This allows unit testing to use mock like interfaces to test much of the logic.
@@ -11,6 +15,20 @@ enum class Error {
   STATUS_OK,
   BME_SENSOR_FAIL,
   HEAT_AND_COOL,
+  MENU_DISPLAY_ARG,
+};
+
+static Error g_error = Error::STATUS_NONE;
+static void ErrorSetter(const Error error) {
+  // Do nothing when it's a good status.
+  if (error == Error::STATUS_OK || error == Error::STATUS_NONE) {
+    return;
+  }
+  // If g_error hasn't been set, set the new error condition.
+  if (g_error == Error::STATUS_NONE) {
+    g_error = error;
+  }
+  
 };
 
 struct Date {
@@ -84,19 +102,13 @@ class Clock {
     }
 };
 
-class Display {
+class Display : public Print {
   public:
-    virtual void Print(const float value) {};
-    virtual void Print(uint16_t value) {};
-    virtual void Print(int value) {};
-    virtual void Print(const char* const str) {};
-    virtual void Write(uint8_t ch) {};
-    virtual void SetCursor(const int column, const int row) {
-    };
+    virtual void SetCursor(const int column, const int row) { UNUSED(column); UNUSED(row);};
 };
 
 class Sensor {
-  public:
+  public:    
     // Most sensors implement this.
     virtual void StartRequestAsync() = 0;
 
@@ -118,15 +130,23 @@ class Sensor {
     };
 
     // Turns on or off the heater for a gas measurement.
-    virtual void EnableGasHeater(const bool enable) {};
+    virtual void EnableGasHeater(const bool enable) { UNUSED(enable); };
 
     virtual uint32_t GetGasResistance() {
       return 0;
     };
 };
 
+class Settings;
+
+class SettingsStorer {
+  public:
+  virtual void write(const Settings& settings) =0;
+  virtual void Read(Settings *settings) = 0;
+};
+
 enum class RelayType {
-  kHeat, kCool, kFan, kHumidifier
+  kHeat, kCool, kFan, kHumidifier, kMax
 };
 
 enum class RelayState {

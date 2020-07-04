@@ -36,14 +36,11 @@ static void AddOrUpdateEvent(const uint32_t now, Settings* const settings) {
   if (new_event) {
     settings->event_index = (settings->event_index + 1) % EVENT_SIZE;
     Event* event = &settings->events[settings->event_index];
-    event->start_time = millis();
+    event->start_time = now;
     event->empty = false;
     event->heat = settings->heat_running;
     event->cool = settings->cool_running;
     event->temperature_x10 = settings->current_mean_temperature_x10;
-
-    Serial.println("######## NEW EVENT: " + String(settings->event_index) +
-                   " Mode: " + String(event->heat) + String(event->cool));
   }
 }
 
