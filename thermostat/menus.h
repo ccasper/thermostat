@@ -6,7 +6,6 @@
 #include "events.h"
 #include "settings.h"
 #include "interfaces.h"
-#include "settings_storer.h"
 //
 //  Each [R] press takes the user through editable settings.
 //       Pressing [U] or [D] causes edit mode to be enabled.
