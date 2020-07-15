@@ -6,6 +6,7 @@
 #include "events.h"
 #include "settings.h"
 #include "interfaces.h"
+#include "settings_storer.h"
 //
 //  Each [R] press takes the user through editable settings.
 //       Pressing [U] or [D] causes edit mode to be enabled.
@@ -29,7 +30,6 @@ namespace thermostat {
 using WaitForButtonPressFn = Button (*)(uint32_t timeout);
 using SettingFn = Button (*)();
 using GetDateFn = Date (*)();
-
 
 static void SetChangedAndPersist(Settings *settings, SettingsStorer *writer) {
   settings->changed = true;
@@ -87,6 +87,7 @@ class Flasher {
       }
       return state_;
     };
+
     // Clear the counter which keeps the flashing state off for the next 500ms.
     //
     // This allows the user to see the digits without flashing when actively adjusting the values.

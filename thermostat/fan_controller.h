@@ -21,8 +21,8 @@ class FanController {
 
       // Allow the fan to run 15 minutes every 1 hours unless heating and cooling are in effect.
       const uint32_t fan_period = Clock::MinutesToMillis(settings->persisted.fan_on_min_period);
-      const uint32_t fan_duration = Clock::MinutesToMillis(static_cast<uint32_t>(settings->persisted.fan_on_min_period) * settings->persisted.fan_on_duty / 100);
 
+      const uint32_t fan_duration = Clock::MinutesToMillis(static_cast<uint32_t>(settings->persisted.fan_on_min_period) * settings->persisted.fan_on_duty / 100);
       const uint32_t last_on_diff = Clock::millisDiff(last_fan_on_time, now);
       if (last_on_diff > Clock::MinutesToMillis(fan_period) && last_on_diff < Clock::MinutesToMillis(fan_period + fan_duration)) {
         fan_enable = true;

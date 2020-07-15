@@ -98,7 +98,7 @@ class Display : public Print {
 };
 
 class Sensor {
-  public:
+  public:    
     // Most sensors implement this.
     virtual void StartRequestAsync() = 0;
 
