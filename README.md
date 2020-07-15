@@ -5,6 +5,21 @@ This is in active use in my Wisconsin house with a Bryant 95s gas furnace with L
 
 ![Thermostat LCD](https://github.com/ccasper/thermostat/blob/master/screenshots/display_lcd.jpg?raw=true)
 
+# Programming:
+
+## Arduino Mega
+
+Use the Arduino IDE to load thermostat/thermostat.ino. All the files needed for running on the Arduino Mega are located in the thermostat/ folder.
+
+## Bazel unit tests.
+
+Bazel is used for building and running the unit tests. The unit tests can be found in the testing/ folder. 
+
+To run the test suite:
+
+- cd testing
+- bazel test ...
+
 # Configurable Settings:
  - Modes selection for Cool only, Heat only, Off, Both on.
  - 2 hour temperature override
@@ -28,6 +43,9 @@ This is in active use in my Wisconsin house with a Bryant 95s gas furnace with L
  - Humidity display in relative humidity.
  - Displays when Heat, Fan, and Cooling are enabled
  - Operates on 5V, 24V or 120V furnace signals. Most modern furnaces are 24V.
+ - High unit test coverage using Bazel with Mocks/Stubs.
+   - Uses GMock, GTest, Bazel (Google's internal toolset)
+   - This is achieved by isolating hardware specific behaviors behind abstract interfaces.
 
 # Implementation
 

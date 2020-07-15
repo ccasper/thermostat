@@ -3,7 +3,7 @@
 #include <Wire.h>
 
 #include "buttons.h"
-#include "calculate_iaq_score.h"
+#include "calculate_iaq.h"
 #include "comparison.h"
 #include "avr_impls.h"
 #include "events.h"
@@ -13,7 +13,7 @@
 #include "settings.h"
 #include "interfaces.h"
 #include "maintain_hvac.h"
-
+#include "settings_storer.h"
 
 // Interrupt Logic.
 //
@@ -67,20 +67,27 @@ SIGNAL(TIMER0_COMPA_vect) {
 // Ensure 'int' is 16 bits (0 - 65535). If this assumption changes, it may cause code
 // bugs.
 static_assert(sizeof(int) == 2);
+static_assert(sizeof(long) == 4);
+static_assert(sizeof(float) == 4);
+static_assert(sizeof(double) == 4);
 
 using namespace thermostat;
 
+Output g_print;
+
+EepromSettingsStorer g_storer;
+
 // Restore the settings to use for the thermostat.
-Settings g_settings = GetEepromOrDefaultSettings();
+Settings g_settings = GetEepromOrDefaultSettings(&g_storer);
 
 // Create the relays controller.
 SsdRelays g_relays = SsdRelays();
 
 // Create the temperature sensor
-DallasSensor g_dallas_sensor;
+DallasSensor g_dallas_sensor = DallasSensor(&g_print);
 
 // Create the temperature/humidity/gas quality sensor.
-BmeSensor g_bme_sensor;
+BmeSensor g_bme_sensor = BmeSensor(&g_print);
 
 // Create the LCD display output.
 Lcd g_lcd;
@@ -91,6 +98,7 @@ RealClock g_clock;
 // Create the fan controller, which is independent of the heat/cool control.
 FanController g_fan;
 
+
 void setup() {
   // Add an extra Timer0 interrupt for the backlight dimming.
   CustomInterruptSetup();
@@ -98,7 +106,7 @@ void setup() {
   // Setup the relay ports.
   g_relays.Setup();
 
-  Serial.begin(9600);
+  g_print.Setup();
   Wire.begin();
 
   // Setup the bme sensor hardware,
@@ -118,7 +126,7 @@ Button WaitForButtonPress(const uint32_t timeout) {
   Button button = Button::NONE;
 
   while (button == Button::NONE) {
-    Error error = MaintainHvac(&g_settings, &g_clock, &g_lcd, &g_relays, &g_fan, &g_bme_sensor, &g_dallas_sensor);
+    Error error = MaintainHvac(&g_settings, &g_clock, &g_lcd, &g_relays, &g_fan, &g_bme_sensor, &g_dallas_sensor, &g_print);
     // Skip the status update when maintain hvac was skipped.
     if (error != Error::STATUS_NONE) {
       ShowStatus(&g_lcd, error);
@@ -144,7 +152,7 @@ Button WaitForButtonPress(const uint32_t timeout) {
 // fields.
 //
 // All blocking calls use WaitForButtonPress to ensure MaintainHvac is always periodically called.
-Menus menu(&g_settings, &WaitForButtonPress, &g_clock, &g_lcd);
+Menus menu(&g_settings, &WaitForButtonPress, &g_clock, &g_lcd, &g_storer);
 
 
 void loop() {

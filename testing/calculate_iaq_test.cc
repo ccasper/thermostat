@@ -3,12 +3,9 @@
 
 #include <cmath>
 
-#include "calculate_iaq_score.h"
+#include "thermostat/calculate_iaq.h"
 
-int main(int argc, char **argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
+namespace thermostat {
 
 TEST(CalculateIaqScore, WithTypicalValues) {
   {
@@ -41,4 +38,6 @@ TEST(CalculateIaqScore, WithTypicalValues) {
     EXPECT_LT(score, 60) << "ideal humidity, moderate gas";
     EXPECT_GT(score, 40) << "ideal humidity, moderate gas";
   }
+}
+
 }

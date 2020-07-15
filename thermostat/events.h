@@ -36,14 +36,11 @@ static void AddOrUpdateEvent(const uint32_t now, Settings* const settings) {
   if (new_event) {
     settings->event_index = (settings->event_index + 1) % EVENT_SIZE;
     Event* event = &settings->events[settings->event_index];
-    event->start_time = millis();
+    event->start_time = now;
     event->empty = false;
     event->heat = settings->heat_running;
     event->cool = settings->cool_running;
     event->temperature_x10 = settings->current_mean_temperature_x10;
-
-    Serial.println("######## NEW EVENT: " + String(settings->event_index) +
-                   " Mode: " + String(event->heat) + String(event->cool));
   }
 }
 
@@ -59,7 +56,7 @@ static uint32_t GetEventDuration(const uint8_t index, const Settings& settings, 
     return Clock::millisDiff(settings.events[index].start_time, now);
   }
   return Clock::millisDiff(settings.events[index].start_time,
-                    settings.events[(index + 1) % EVENT_SIZE].start_time);
+                           settings.events[(index + 1) % EVENT_SIZE].start_time);
 }
 
 //// Returns true if found and value passed back in diff parameter.
@@ -161,7 +158,7 @@ static float OnPercent(const Settings& settings, const uint32_t now) {
 
 // Returns how long the system has been either running or not running.
 static uint32_t CalculateSeconds(const bool running, const Settings& settings,
-                          uint8_t* const events, const uint32_t now) {
+                                 uint8_t* const events, const uint32_t now) {
   uint32_t total_seconds = 0;
   uint32_t total_events = 0;
 

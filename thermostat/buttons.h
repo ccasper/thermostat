@@ -5,7 +5,7 @@
 #include "interfaces.h"
 
 namespace thermostat {
-  
+
 
 enum class Button { NONE, SELECT, RIGHT, LEFT, UP, DOWN, TIMEOUT };
 
@@ -76,7 +76,7 @@ class Buttons {
         return active;
       }
 
-      // Return a button press at 40Hz it's held after 3 seconds.
+      // Return a button press at 40Hz it's held after 5 seconds.
       const uint32_t fourth_counts = Clock::millisDiff(started_at_ms, now) / 250;
       // Auto press at a 25ms rate after holding for 5 seconds.
       if (fourth_counts >= 4 /*counts per second*/ * 5) {

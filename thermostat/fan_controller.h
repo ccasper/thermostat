@@ -1,6 +1,6 @@
 #ifndef FAN_CONTROLLER_H_
 #define FAN_CONTROLLER_H_
-# This helper manages the HVAC fan control for extending circulation and periodically running the fan even when HVAC is off.
+// This helper manages the HVAC fan control for extending circulation and periodically running the fan even when HVAC is off.
 
 #include "settings.h"
 
@@ -14,20 +14,20 @@ constexpr int kExtendFanRunMinutes = 5;
 // This allows the fan to run for 5 minutes for better room balancing after the HVAC stops
 // running.
 class FanController {
-  public:    
+  public:
     void Maintain(Settings* const settings, const uint32_t now) {
       // Get the persisted fan setting.
       bool fan_enable = settings->persisted.fan_always_on;
 
-      // Allow the fan to run 30 minutes every 3 hours unless heating and cooling are in effect.
-      constexpr uint32_t fan_period = Clock::HoursToMillis(3);
-      constexpr uint32_t fan_duration = Clock::MinutesToMillis(30);
-      
+      // Allow the fan to run 15 minutes every 1 hours unless heating and cooling are in effect.
+      const uint32_t fan_period = Clock::MinutesToMillis(settings->persisted.fan_on_min_period);
+      const uint32_t fan_duration = Clock::MinutesToMillis(static_cast<uint32_t>(settings->persisted.fan_on_min_period) * settings->persisted.fan_on_duty / 100);
+
       const uint32_t last_on_diff = Clock::millisDiff(last_fan_on_time, now);
-      if (last_on_diff > Clock::MinutesToMillis(fan_period) && last_on_diff < Clock::MinutesToMillis(fan_period+fan_duration)) {
+      if (last_on_diff > Clock::MinutesToMillis(fan_period) && last_on_diff < Clock::MinutesToMillis(fan_period + fan_duration)) {
         fan_enable = true;
       }
-      
+
       // Allow extending the fan after a heat/cool cycle.
       Event* curr_event;
       Event* prev_event;
@@ -62,7 +62,7 @@ class FanController {
     }
   private:
     uint32_t last_fan_on_time = 0;
-    
+
 };
 }
 #endif  // FAN_CONTROLLER_H_

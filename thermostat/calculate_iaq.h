@@ -1,6 +1,6 @@
 #ifndef CALCULATE_IAQ_SCORE_H_
 #define CALCULATE_IAQ_SCORE_H_
-# This implements an indoor air quality percentage for the BME gas sensor.
+// This implements an indoor air quality percentage for the BME gas sensor.
 
 #include "comparison.h"
 

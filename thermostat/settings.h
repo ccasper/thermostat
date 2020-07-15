@@ -2,14 +2,14 @@
 #define SETTINGS_H_
 // This header implements the object and helper functions to store user settings and HVAC control and status information.
 
-#include <EEPROM.h>
-
 #include "interfaces.h"
+#include "comparison.h"
+
 
 namespace thermostat {
 
 // 65536 is the largest representable value.
-constexpr uint16_t VERSION = 34806;
+constexpr uint16_t VERSION = 34807;
 
 enum class Mode { HEAT, COOL };
 
@@ -44,6 +44,8 @@ struct PersistedSettings {
   int tolerance_x10 = 15;  // 1.5 degrees above and below.
 
   uint16_t fan_extend_mins = 5;
+  uint16_t fan_on_min_period = 60;
+  uint8_t fan_on_duty = 25; // 0 (OFF) - 99%
 };
 
 // List of events for temperature change calculations.
@@ -122,67 +124,6 @@ struct Settings {
   PersistedSettings persisted;
 };
 
-static void SetChangedAndPersist(Settings* settings) {
-  settings->changed = true;
-  EEPROM.put(0, settings->persisted);
-}
-
-static void SaveAllSettingsForDebug(Settings* settings) {
-  EEPROM.put(sizeof(PersistedSettings), settings);
-}
-
-static void OutputAllSettingsForDebug() {
-  Serial.println("Loading all settings for debug");
-  // Read the settings from EEPROM.
-  Settings settings;
-  // Skip past the persisted settings to the stored debug settings.
-  EEPROM.get(sizeof(PersistedSettings), settings);
-
-  // If the versions mismatch, don't attempt to print the data.
-  if (settings.persisted.version != VERSION) {
-    Serial.println("Settings version mismatch");
-  }
-  // TODO Print out the fields.
-}
-
-static void SetChanged(Settings* settings) {
-  settings->changed = true;
-}
-
-static Settings GetEepromOrDefaultSettings() {
-  // Read the settings from EEPROM.
-  Settings settings;
-  EEPROM.get(0, settings.persisted);
-
-  // If it don't look right, use the defaults.
-  if (settings.persisted.version != VERSION) {
-    Settings defaults;
-    defaults.persisted.version = VERSION;
-    // 7am-9pm -> 70.0° ; 9pm-7am -> 69°
-    defaults.persisted.heat_setpoints[0].hour = 7;
-    defaults.persisted.heat_setpoints[0].temperature_x10 = 700;
-    defaults.persisted.heat_setpoints[1].hour = 21;
-    defaults.persisted.heat_setpoints[1].temperature_x10 = 690;
-
-    // 7am-9pm -> 77.0° ; 9pm-7am -> 72°
-    defaults.persisted.cool_setpoints[0].hour = 7;
-    defaults.persisted.cool_setpoints[0].temperature_x10 = 770;
-    defaults.persisted.cool_setpoints[1].hour = 21;
-    defaults.persisted.cool_setpoints[1].temperature_x10 = 720;
-
-    // With a 1.1° tolerance.
-    //
-    // If the setpoint is 70°, heat stops at 70° and heating restarts at 68.9°, or cooling
-    // restarts at 71.1°.
-    defaults.persisted.tolerance_x10 = 11;
-
-    // Write them to the eeprom.
-    SetChangedAndPersist(&defaults);
-
-    return defaults;
-  }
-  return settings;
-}
 
 static int GetSetpointTemp(const Settings& settings, const Date& date, Mode mode);
 
@@ -192,17 +133,17 @@ static bool IsOverrideTempActive(const Settings& settings) {
 
 static int GetOverrideTemp(const Settings& settings) {
   if (IsOverrideTempActive(settings)) {
-    return max(400, min(999, settings.override_temperature_x10));
+    return cmax(400, cmin(999, settings.override_temperature_x10));
   }
   return settings.current_mean_temperature_x10;
 }
 
 // Overrides and temperature based on the current setpoint temperature the changed flag
 // for faster updating.
-static void SetOverrideTemp(int amount, Settings* settings, const uint32_t now, const Date& date) {
+static void SetOverrideTemp(int amount, Settings* settings, const uint32_t now) {
   // Bound the value to 40.0-99.9.
   settings->override_temperature_x10 =
-    max(400, min(999, GetOverrideTemp(*settings) + amount));
+    cmax(400, cmin(999, GetOverrideTemp(*settings) + amount));
   settings->override_temperature_started_ms = now;
 }
 
@@ -235,7 +176,7 @@ static int GetSetpointTemp(const Settings& settings, const Date& date, const Mod
       temp = setpoint.temperature_x10;
     }
   }
-  return max(400, min(999, temp));
+  return cmax(400, cmin(999, temp));
 }
 
 }

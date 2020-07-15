@@ -7,15 +7,17 @@
 #include <DallasTemperature.h>
 #include "interfaces.h"
 #include "uRTCLib.h"
+#include "print.h"
 
 #define ONE_WIRE_BUS 33
+#define UNUSED(x) (void)(x)
 
 namespace thermostat {
 
 
 class DallasSensor : public Sensor {
   public:
-    DallasSensor() {
+    DallasSensor(Print *print) : print_(print) {
       sensor_.begin();
 
       // We only have one dallas temperature sensor on the bus. Store this to avoid needing to
@@ -29,11 +31,11 @@ class DallasSensor : public Sensor {
     // TODO: Finish filling this in.
     void StartRequestAsync() override {
       sensor_.requestTemperatures();
-      };
+    };
     float GetTemperature() override {
       return sensor_.getTempF(temperature_address_);
     };
-    void EnableGasHeater(const bool enable) override {};
+    void EnableGasHeater(const bool ) override { };
     uint32_t GetGasResistance() override {
       return 0;
     };
@@ -43,6 +45,7 @@ class DallasSensor : public Sensor {
     OneWire temperature_one_wire_ = OneWire(ONE_WIRE_BUS);
 
     DallasTemperature sensor_ = DallasTemperature(&temperature_one_wire_);
+    Print *print_;
 
 
 };
@@ -61,34 +64,18 @@ class Lcd : public Display {
       lcd_.createChar(0, custom_degree);
       lcd_.createChar(1, custom_backslash);
     }
-    void Print(const char *str) override  {
-      lcd_.print(str);
-      //while (*str) {
-      //  Write(*str++);
-      //}
-    };
-    void Print(const float value) override  {
-      lcd_.print(value, DEC);
-    };
-    void Print(const uint16_t value) override  {
-      lcd_.print(value, DEC);
-    };
-    void Print(const int value) override  {
-      lcd_.print(value, DEC);
-    };
-    void Write(uint8_t ch) override  {
-      //if (ch == '\\') {
-      //  lcd_.write(byte(1));
-      //  return;
-      //}
-      //if (ch == 176) { // '°'
-      //  lcd_.write(byte(0));
-      //  return;
-      //}
+    void write(uint8_t ch) override {
+      if (ch == '\247') { // '°'
+        lcd_.write(byte(0));
+        return;
+      }
+      if (ch == '\134') { // '\'
+        lcd_.write(byte(1));
+        return;
+      }
 
       lcd_.write(ch);
-
-    } ;
+    }
     void SetCursor(const int row, const int column) override {
       lcd_.setCursor(row, column);
       // This is reverse of LiquidCrystal since it's more intuitive to talk about row first.
@@ -125,9 +112,11 @@ class Lcd : public Display {
 
 class BmeSensor : public Sensor {
   public:
+    BmeSensor(Print *print) : print_(print) {};
+
     void Setup() {
       if (!bme_.begin()) {
-        Serial.println("Could not find a valid BME680 sensor, check wiring!");
+        print_->print("Could not find a valid BME680 sensor, check wiring!\r\n");
         while (1)
           ;
       }
@@ -152,7 +141,7 @@ class BmeSensor : public Sensor {
     }
 
     void EnableGasHeater(bool enable) override {
-      if (true) {
+      if (enable) {
         bme_.setGasHeater(320, 150);  // 320°C for 150 ms
         return;
       }
@@ -174,6 +163,7 @@ class BmeSensor : public Sensor {
 
   private:
     Adafruit_BME680 bme_;
+    Print *print_;
 
 };
 
@@ -244,6 +234,9 @@ class SsdRelays: public Relays {
           }
           digitalWrite(SSR4_PIN, state);
           break;
+        default:
+          // Do nothing.
+          break;
       }
     };
   private:
@@ -263,6 +256,19 @@ class SsdRelays: public Relays {
     static constexpr int ON = LOW;
     static constexpr int OFF = HIGH;
 
+};
+
+// Abstract interface for Serial/Debug output.
+class Output : public Print {
+  public:
+    virtual void Setup() {
+      ::Serial.begin(9600);
+    }
+    // Note: Arduinos Print uses a return size_t, but we need
+    // this to be consistent.
+    void write(uint8_t ch) override {
+      ::Serial.write(ch);
+    };
 };
 
 }
