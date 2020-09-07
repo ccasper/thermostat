@@ -12,48 +12,47 @@ namespace thermostat {
 
 constexpr uint32_t kManualTemperatureOverrideDuration = Clock::HoursToMillis(2);
 
-static Error g_error = Error::STATUS_NONE;
+static Error g_error = Error::STATUS_OK;
 
 // This is shown as the final character of the first row. This is the only character in
 // the first row used by the menus.
 static void ShowStatus(Display *display, const Error error) {
   static uint8_t s_counter = 0;
 
+  // Skip empty statuses and don't spin the spinner.
+  if (error == Error::STATUS_NONE) {
+    return;
+  }
+
   // An error gets latched on the screen until the thermostat is reset.
-  if (error != Error::STATUS_OK && error != Error::STATUS_NONE) {
+  if (error != Error::STATUS_OK) {
     g_error = error;
   }
 
-  // We use the last character in the first row.
+  // The character in the first row far right is the status.
   display->SetCursor(15, 0);
-  if (g_error == Error::STATUS_OK || g_error == Error::STATUS_NONE) {
-    // Make an animation to allow a user to know the HVAC is still fully updating.
-    s_counter = (s_counter + 1) % 4;
-    if (s_counter == 0) {
-      display->write('/');
-    }
-    if (s_counter == 1) {
-      display->write('-');
-    }
-    if (s_counter == 2) {
-      display->write(uint8_t(1));  // Prints the '\', the LCD's '\' is the Yen symbol.
-    }
-    if (s_counter == 3) {
-      display->write('|');
-    }
-  } else {
+
+  // We use the last character in the first row.
+  if (g_error != Error::STATUS_OK) {
     // Show the error instead.
-    switch (g_error) {
-      case Error::BME_SENSOR_FAIL:
-        display->print('B');
-        break;
-      case Error::HEAT_AND_COOL:
-        display->print('b');
-        break;
-      default:
-        display->print('X');
-        break;
-    }
+    // Errors are in the range of A-Z (0-26).
+    display->print(static_cast<char>('A' + static_cast<uint8_t>(g_error)));
+    return;
+  }
+
+  // Make the spinning animation to allow a user to know the HVAC is still fully updating.
+  s_counter = (s_counter + 1) % 4;
+  if (s_counter == 0) {
+    display->write('/');
+  }
+  if (s_counter == 1) {
+    display->write('-');
+  }
+  if (s_counter == 2) {
+    display->write(uint8_t(1));  // Prints a custom '\'. The LCD's default '\' is the Yen symbol.
+  }
+  if (s_counter == 3) {
+    display->write('|');
   }
 }
 
@@ -216,16 +215,6 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
     display->write(' ');
   }
 
-  // Update the fan control based on the current settings.
-  fan->Maintain(settings, now);
-  if (settings->fan_running) {
-    display->write('F');
-    relays->Set(RelayType::kFan, RelayState::kOn);
-  } else {
-    display->write('_');
-    relays->Set(RelayType::kFan, RelayState::kOff);
-  }
-
   const int setpoint_temperature_x10 =
     GetSetpointTemp(*settings, clock->Now(), Mode::HEAT);
   print->print("Temp: ");
@@ -354,6 +343,16 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
     } else {
       display->write('_');
     }
+  }
+
+  // Update the fan control based on the current settings.
+  fan->Maintain(settings);
+  if (settings->fan_running) {
+    display->write('F');
+    relays->Set(RelayType::kFan, RelayState::kOn);
+  } else {
+    display->write('_');
+    relays->Set(RelayType::kFan, RelayState::kOff);
   }
 
   // Maintain the historical events list.

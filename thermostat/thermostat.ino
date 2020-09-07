@@ -96,7 +96,7 @@ Lcd g_lcd;
 RealClock g_clock;
 
 // Create the fan controller, which is independent of the heat/cool control.
-FanController g_fan;
+FanController g_fan(&g_clock);
 
 
 void setup() {
@@ -126,11 +126,9 @@ Button WaitForButtonPress(const uint32_t timeout) {
   Button button = Button::NONE;
 
   while (button == Button::NONE) {
-    Error error = MaintainHvac(&g_settings, &g_clock, &g_lcd, &g_relays, &g_fan, &g_bme_sensor, &g_dallas_sensor, &g_print);
+    const Error error = MaintainHvac(&g_settings, &g_clock, &g_lcd, &g_relays, &g_fan, &g_bme_sensor, &g_dallas_sensor, &g_print);
     // Skip the status update when maintain hvac was skipped.
-    if (error != Error::STATUS_NONE) {
-      ShowStatus(&g_lcd, error);
-    }
+    ShowStatus(&g_lcd, error);
 
     // Poll for single button presses.
     button = Buttons::GetSinglePress(

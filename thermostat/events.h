@@ -10,53 +10,60 @@ namespace thermostat {
 static void AddOrUpdateEvent(const uint32_t now, Settings* const settings) {
   // Clear any events that are over a month old.
   for (uint8_t i = 0; i < EVENT_SIZE; ++i) {
-    if (settings->events[i].empty) {
+    if (settings->events[i].empty()) {
       continue;
     }
     if (Clock::millisDiff(settings->events[i].start_time, now) > Clock::DaysToMillis(30)) {
-      settings->events[i].empty = true;
+      settings->events[i].set_empty();
     }
   }
 
   // Check to see if the last settings match the current window.
-  bool new_event = false;
+  bool make_new_event = false;
 
   if (settings->event_index == 255) {
-    new_event = true;
+    make_new_event = true;
   }
 
   Event* event = &settings->events[settings->event_index];
-  if (settings->heat_running != event->heat) {
-    new_event = true;
+  if (settings->GetHvacMode() != event->hvac) {
+    make_new_event = true;
   }
-  if (settings->cool_running != event->cool) {
-    new_event = true;
+  
+  if (settings->GetFanMode() != event->fan) {
+    make_new_event = true;
   }
 
-  if (new_event) {
+  if (make_new_event) {
     settings->event_index = (settings->event_index + 1) % EVENT_SIZE;
-    Event* event = &settings->events[settings->event_index];
-    event->start_time = now;
-    event->empty = false;
-    event->heat = settings->heat_running;
-    event->cool = settings->cool_running;
-    event->temperature_x10 = settings->current_mean_temperature_x10;
+    Event* new_event = &settings->events[settings->event_index];
+    new_event->start_time = now;
+
+    new_event->temperature_x10 = settings->current_mean_temperature_x10;
+    new_event->hvac = settings->GetHvacMode();
+    new_event->fan = settings->GetFanMode();
   }
 }
 
-// Returns Zero whenn empty, otherwise the length of time for the event.
+// Returns Zero when empty, otherwise the length of time for the event.
 static uint32_t GetEventDuration(const uint8_t index, const Settings& settings, const uint32_t now) {
   // If the event is empty, we don't have a duration.
-  if (settings.events[index].empty) {
+
+  if (index >= EVENT_SIZE) {
     return 0;
   }
 
+  if (settings.events[index].empty()) {
+    return 0;
+  }
+
+  const uint8_t next_index = (index + 1) % EVENT_SIZE;
   // When we don't have an event after this, then we use the current time.
-  if (settings.events[(index + 1) % EVENT_SIZE].empty) {
+  if (settings.events[next_index].empty()) {
     return Clock::millisDiff(settings.events[index].start_time, now);
   }
   return Clock::millisDiff(settings.events[index].start_time,
-                           settings.events[(index + 1) % EVENT_SIZE].start_time);
+                           settings.events[next_index].start_time);
 }
 
 //// Returns true if found and value passed back in diff parameter.
@@ -85,7 +92,7 @@ static bool IsInLockoutMode(const Mode mode, const Event* events,
 
   // Find the newest event.
   for (int i = 0; i < events_size; ++i) {
-    if (events[i].empty) {
+    if (events[i].empty()) {
       continue;
     }
     if (Clock::millisDiff(events[i].start_time, now) < millis_since) {
@@ -104,10 +111,10 @@ static bool IsInLockoutMode(const Mode mode, const Event* events,
   }
 
   // Are we actively heating or cooling?
-  if (mode == Mode::COOL && millis_since < kLockoutMs && events[index].heat) {
+  if (mode == Mode::COOL && millis_since < kLockoutMs && events[index].hvac == HvacMode::HEAT) {
     return true;
   }
-  if (mode == Mode::HEAT && millis_since < kLockoutMs && events[index].cool) {
+  if (mode == Mode::HEAT && millis_since < kLockoutMs && events[index].hvac == HvacMode::COOL) {
     return true;
   }
 
@@ -115,16 +122,16 @@ static bool IsInLockoutMode(const Mode mode, const Event* events,
   while (true) {
     index = (index - 1) % events_size;
     // The previous event is empty.
-    if (events[index].empty) {
+    if (events[index].empty()) {
       return false;
     }
 
     // We use the started time of the newer event to know when it stopped.
-    if (mode == Mode::COOL && events[index].heat) {
+    if (mode == Mode::COOL && events[index].hvac == HvacMode::HEAT) {
       return true;
     }
 
-    if (mode == Mode::HEAT && events[index].cool) {
+    if (mode == Mode::HEAT && events[index].hvac == HvacMode::COOL) {
       return true;
     }
 
@@ -171,7 +178,7 @@ static uint32_t CalculateSeconds(const bool running, const Settings& settings,
       continue;
     }
 
-    const bool is_running = settings.events[idx].heat || settings.events[idx].cool;
+    const bool is_running = settings.events[idx].hvac == HvacMode::HEAT || settings.events[idx].hvac == HvacMode::COOL;
 
     // Only sum events that match the desired running state.
     if (running != is_running) {

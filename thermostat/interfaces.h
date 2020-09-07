@@ -37,12 +37,17 @@ class Clock {
     }
 
     // Calculate the millis since the previous time accounting for wrap around.
-    int minutesSince(const uint32_t previous) {
+    uint32_t secondsSince(const uint32_t previous) {
+      return millisDiff(previous, Millis()) / 1000 /*sec*/;
+    }
+
+    // Calculate the millis since the previous time accounting for wrap around.
+    uint32_t minutesSince(const uint32_t previous) {
       return millisDiff(previous, Millis()) / 1000 /*sec*/ / 60 /*minutes*/;
     }
 
     // Calculate the millis since the previous time accounting for wrap around.
-    int daysSince(const uint32_t previous) {
+    uint32_t daysSince(const uint32_t previous) {
       return minutesSince(previous) / 60 /*hours*/ / 24 /*hours*/;
     }
 

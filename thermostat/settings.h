@@ -11,7 +11,11 @@ namespace thermostat {
 // 65536 is the largest representable value.
 constexpr uint16_t VERSION = 34807;
 
+// TODO(): Get Rid of Mode in favor of HvacMode.
 enum class Mode { HEAT, COOL };
+
+enum class HvacMode {EMPTY, IDLE, HEAT, COOL};
+enum class FanMode {EMPTY, ON, OFF};
 
 constexpr char daysOfTheWeek[7][3] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
 
@@ -44,25 +48,34 @@ struct PersistedSettings {
   int tolerance_x10 = 15;  // 1.5 degrees above and below.
 
   uint16_t fan_extend_mins = 5;
-  uint16_t fan_on_min_period = 60;
-  uint8_t fan_on_duty = 25; // 0 (OFF) - 99%
+  // Run minimum 15% duty cycle (30 mins) every 3 hours.
+  uint16_t fan_on_min_period = 180;
+  uint8_t fan_on_duty = 15; // 0 (OFF) - 99%
 };
 
 // List of events for temperature change calculations.
 class Event {
   public:
-    Event() : empty(true) {}
+    Event() : hvac(HvacMode::EMPTY), fan(FanMode::EMPTY) {}
+    
+    bool empty() const {
+      return hvac == HvacMode::EMPTY && fan == FanMode::EMPTY;
+    }
+    
+    void set_empty() {
+      hvac = HvacMode::EMPTY;
+      fan = FanMode::EMPTY;
+    }
+    
+    HvacMode hvac;
+    FanMode fan;
 
-    uint8_t empty : 1;
-    uint8_t heat : 1;
-    uint8_t cool : 1;
     // The temperature when the event occurred.
-    int16_t temperature_x10 : 14;
+    int16_t temperature_x10;
     uint32_t start_time;
-    uint32_t temperature_x10_overshoot : 3;
 };
 
-constexpr uint8_t EVENT_SIZE = 10;
+constexpr uint8_t EVENT_SIZE = 24;
 
 struct Settings {
   // The settings have had a recently changed field.
@@ -70,9 +83,11 @@ struct Settings {
   // Use SetChanged() to update EEPROM data and this bit.
   uint8_t changed : 1;  // one bit.
 
+  // TODO(): use HvacMode and FanMode in Settings instead of the booleans.
+
   // Is cooling actively running.
   bool cool_running = 0;
-
+  
   // Is heating actively running.
   bool heat_running = 0;
 
@@ -101,21 +116,33 @@ struct Settings {
   // Events initialize to field empty = true.
   Event events[EVENT_SIZE] = {};
 
+  HvacMode GetHvacMode() const {
+    if (heat_running) { return HvacMode::HEAT; }
+    if (cool_running) { return HvacMode::COOL; }
+    return HvacMode::IDLE;
+  }
+
+  FanMode GetFanMode() const {
+    if (fan_running) { return FanMode::ON; }
+    return FanMode::OFF;
+  }
+
   int CurrentEventIndex() const {
-    if (events[event_index].empty) {
+    if (events[event_index].empty()) {
       return -1;
     }
     return event_index;
   }
+
   int PrevEventIndex(int index) {
     if (index == -1) {
       return -1;
     }
     uint8_t unsigned_index = index;
-    if (events[unsigned_index].empty) {
+    if (events[unsigned_index].empty()) {
       return -1;
     }
-    if (events[(unsigned_index - 1) % EVENT_SIZE].empty) {
+    if (events[(unsigned_index - 1) % EVENT_SIZE].empty()) {
       return -1;
     }
     return (unsigned_index - 1) % EVENT_SIZE;

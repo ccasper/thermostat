@@ -91,3 +91,18 @@ cc_test(
     ],
     copts = ["-Ithermostat"],
 )
+
+cc_test(
+    name = "fan_controller_test",
+    srcs = ["fan_controller_test.cc"],
+    deps = [
+                    "@gtest//:gtest",
+                    "@gtest//:gtest_main",
+                    "@google_glog//:glog",
+                    "@com_github_gflags_gflags//:gflags",
+                    "//thermostat:core",
+                    ":mock_impls"
+    ],
+    copts = ["-Ithermostat"],
+)
+

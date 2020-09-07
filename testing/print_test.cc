@@ -1,28 +1,30 @@
+
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <stdint.h>
-#include "absl/strings/str_cat.h"
-#include "thermostat/print.h"
 
 #include <cmath>
+
+#include "thermostat/print.h"
+
+#include "absl/strings/str_cat.h"
 
 namespace thermostat {
 namespace {
 
-class PrintStub : public Print {  
-  public:
-    // Write the characters to the array.
-    void write(uint8_t ch) override {
-      assert(index < 100);
-      arr[index++] = ch;
-    };
-    
-    char arr[100] = {0};
-  
-  private:
-    uint8_t index = 0;
-};
+class PrintStub : public Print {
+ public:
+  // Write the characters to the array.
+  void write(uint8_t ch) override {
+    assert(index < 100);
+    arr[index++] = ch;
+  };
 
+  char arr[100] = {0};
+
+ private:
+  uint8_t index = 0;
+};
 
 TEST(PrintTest, Integer) {
   {
@@ -127,5 +129,5 @@ TEST(PrintTest, FloatRoundsNearest) {
   }
 }
 
-}
-} // namespace thermostat
+}  // namespace
+}  // namespace thermostat

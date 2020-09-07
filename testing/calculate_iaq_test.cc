@@ -1,3 +1,4 @@
+
 #include <gtest/gtest.h>
 #include <stdint.h>
 
@@ -40,4 +41,4 @@ TEST(CalculateIaqScore, WithTypicalValues) {
   }
 }
 
-}
+}  // namespace thermostat
