@@ -319,16 +319,16 @@ class Menus {
             button = SetMode();
             break;
           case 3:
-            button = SetSetpointNew(0, Mode::HEAT);
+            button = SetSetpointNew(0, HvacMode::HEAT);
             break;
           case 4:
-            button = SetSetpointNew(1, Mode::HEAT);
+            button = SetSetpointNew(1, HvacMode::HEAT);
             break;
           case 5:
-            button = SetSetpointNew(0, Mode::COOL);
+            button = SetSetpointNew(0, HvacMode::COOL);
             break;
           case 6:
-            button = SetSetpointNew(1, Mode::COOL);
+            button = SetSetpointNew(1, HvacMode::COOL);
             break;
           case 8:
             button = SetTolerance();
@@ -617,7 +617,7 @@ class Menus {
     //      Digit mins = Digit(date.minute, 0, 99, false, "", display_, &flasher);
     //
     //      ResetLine();
-    //      display_->print((mode == Mode::HEAT) ? "H" : "C");
+    //      display_->print((mode == HvacMode::HEAT) ? "H" : "C");
     //      display_->print(setpoint + 1);
     //      display_->print(":");
     //      auto update = [&]() {
@@ -671,7 +671,7 @@ class Menus {
     //            mins.Increment(field == 3, increment);
     //            break;
     //          case Button::SELECT:
-    //            if (mode == Mode::HEAT) {
+    //            if (mode == HvacMode::HEAT) {
     //              settings_->persisted.heat_setpoints[setpoint].temperature_x10 =
     //                temp.Value();
     //              settings_->persisted.heat_setpoints[setpoint].hour = hrs.Value();
@@ -810,19 +810,19 @@ class Menus {
       }
     }
 
-    Button SetSetpoint(const uint8_t setpoint, const Mode mode) {
+    Button SetSetpoint(const uint8_t setpoint, const HvacMode mode) {
       constexpr uint8_t kMaxFields = 3;
       uint8_t field = 0;
 
       // Copy the current settings for editing.
       int temperature_x10 =
-        (mode == Mode::HEAT)
+        (mode == HvacMode::HEAT)
         ? settings_->persisted.heat_setpoints[setpoint].temperature_x10
         : settings_->persisted.cool_setpoints[setpoint].temperature_x10;
       ;
-      int hour = (mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].hour
+      int hour = (mode == HvacMode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].hour
                  : settings_->persisted.cool_setpoints[setpoint].hour;
-      int minute = (mode == Mode::HEAT)
+      int minute = (mode == HvacMode::HEAT)
                    ? settings_->persisted.heat_setpoints[setpoint].minute
                    : settings_->persisted.cool_setpoints[setpoint].minute;
 
@@ -831,7 +831,7 @@ class Menus {
       bool flash_state = false;
 
       ResetLine();
-      display_->print((mode == Mode::HEAT) ? "H" : "C");
+      display_->print((mode == HvacMode::HEAT) ? "H" : "C");
       auto update = [&]() {
         display_->SetCursor(1, 1);
         display_->print(setpoint + 1);
@@ -937,7 +937,7 @@ class Menus {
             }
             break;
           case Button::SELECT:
-            if (mode == Mode::HEAT) {
+            if (mode == HvacMode::HEAT) {
               settings_->persisted.heat_setpoints[setpoint].temperature_x10 =
                 temperature_x10;
               settings_->persisted.heat_setpoints[setpoint].hour = hour;
@@ -964,24 +964,24 @@ class Menus {
       }
     }
 
-    Button SetSetpointNew(const uint8_t setpoint, const Mode mode) {
+    Button SetSetpointNew(const uint8_t setpoint, const HvacMode mode) {
       constexpr uint8_t kMaxFields = 3;
       uint8_t field = 0;
       // 1234567890123456
       // H1: XX.X° XX:XX
       Flasher flasher(clock_);
       Waiter waiter(&wait_for_button_press_);
-      Digit temp = Digit((mode == Mode::HEAT)
+      Digit temp = Digit((mode == HvacMode::HEAT)
                          ? settings_->persisted.heat_setpoints[setpoint].temperature_x10
                          : settings_->persisted.cool_setpoints[setpoint].temperature_x10, 0, 999, true, "", display_, &flasher);
-      Digit hrs = Digit((mode == Mode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].hour
+      Digit hrs = Digit((mode == HvacMode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].hour
                         : settings_->persisted.cool_setpoints[setpoint].hour, 0, 23, false, ":", display_, &flasher);
-      Digit mins = Digit((mode == Mode::HEAT)
+      Digit mins = Digit((mode == HvacMode::HEAT)
                          ? settings_->persisted.heat_setpoints[setpoint].minute
                          : settings_->persisted.cool_setpoints[setpoint].minute, 0, 99, false, "", display_, &flasher);
 
       ResetLine();
-      display_->print((mode == Mode::HEAT) ? "H" : "C");
+      display_->print((mode == HvacMode::HEAT) ? "H" : "C");
       display_->print(setpoint + 1);
       display_->print(":");
       auto update = [&]() {
@@ -1037,7 +1037,7 @@ class Menus {
             mins.Increment(field == 3, increment);
             break;
           case Button::SELECT:
-            if (mode == Mode::HEAT) {
+            if (mode == HvacMode::HEAT) {
               settings_->persisted.heat_setpoints[setpoint].temperature_x10 =
                 temp.Value();
               settings_->persisted.heat_setpoints[setpoint].hour = hrs.Value();

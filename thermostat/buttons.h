@@ -6,7 +6,6 @@
 
 namespace thermostat {
 
-
 enum class Button { NONE, SELECT, RIGHT, LEFT, UP, DOWN, TIMEOUT };
 
 // Helper for managing the 1602 shield analog buttons. This performs button debouncing and

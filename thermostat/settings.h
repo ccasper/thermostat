@@ -11,9 +11,6 @@ namespace thermostat {
 // 65536 is the largest representable value.
 constexpr uint16_t VERSION = 34807;
 
-// TODO(): Get Rid of Mode in favor of HvacMode.
-enum class Mode { HEAT, COOL };
-
 enum class HvacMode {EMPTY, IDLE, HEAT, COOL};
 enum class FanMode {EMPTY, ON, OFF};
 
@@ -152,7 +149,7 @@ struct Settings {
 };
 
 
-static int GetSetpointTemp(const Settings& settings, const Date& date, Mode mode);
+static int GetSetpointTemp(const Settings& settings, const Date& date, HvacMode mode);
 
 static bool IsOverrideTempActive(const Settings& settings) {
   return settings.override_temperature_x10 != 0;
@@ -176,7 +173,7 @@ static void SetOverrideTemp(int amount, Settings* settings, const uint32_t now) 
 
 
 // Gets the current setpoint temperature based on current date and any set override.
-static int GetSetpointTemp(const Settings& settings, const Date& date, const Mode mode) {
+static int GetSetpointTemp(const Settings& settings, const Date& date, const HvacMode mode) {
   if (IsOverrideTempActive(settings)) {
     return GetOverrideTemp(settings);
   }
@@ -188,7 +185,7 @@ static int GetSetpointTemp(const Settings& settings, const Date& date, const Mod
   uint16_t smallest_diff = 24 * 60;
   int temp = 0;
 
-  for (const Setpoint& setpoint : (mode == Mode::HEAT)
+  for (const Setpoint& setpoint : (mode == HvacMode::HEAT)
        ? settings.persisted.heat_setpoints
        : settings.persisted.cool_setpoints) {
     uint16_t minutes = setpoint.hour * 60 + setpoint.minute;

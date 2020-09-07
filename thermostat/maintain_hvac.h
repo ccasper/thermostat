@@ -216,7 +216,7 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
   }
 
   const int setpoint_temperature_x10 =
-    GetSetpointTemp(*settings, clock->Now(), Mode::HEAT);
+    GetSetpointTemp(*settings, clock->Now(), HvacMode::HEAT);
   print->print("Temp: ");
   print->print(settings->current_temperature_x10);
   print->print(               " Mean: " );
@@ -259,7 +259,7 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
     // tolerance is 2.
     if (settings->persisted.heat_enabled && temperature_mean < setpoint_temperature_x10) {
       // Start heating, we've reached our heating setpoint.
-      if (!IsInLockoutMode(Mode::HEAT, settings->events, 10, now)) {
+      if (!IsInLockoutMode(HvacMode::HEAT, settings->events, 10, now)) {
         settings->heat_running = true;
       } else {
         lockout_heat = true;
@@ -277,7 +277,7 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
   //
   // Therefore when the thermostat reaches 75° when set at 75°, the user can expect
   // cooling to turn on.
-  const int cool_temperature_x10 = GetSetpointTemp(*settings, clock->Now(), Mode::COOL);
+  const int cool_temperature_x10 = GetSetpointTemp(*settings, clock->Now(), HvacMode::COOL);
   // Should we enable/disable cooling mode?
   if (settings->cool_running) {
     if (temperature_mean <= cool_temperature_x10 - settings->persisted.tolerance_x10) {
@@ -288,7 +288,7 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
     // Assuming a set point of 70, we should start cooling at 72 with a tolerance set
     // of 2.
     if (temperature_mean > cool_temperature_x10) {
-      if (!IsInLockoutMode(Mode::COOL, settings->events, 10, now)) {
+      if (!IsInLockoutMode(HvacMode::COOL, settings->events, 10, now)) {
         // Start cooling, we've reached the cooling setpoint.
         settings->cool_running = true;
       } else {

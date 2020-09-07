@@ -26,8 +26,8 @@ TEST(EventsTest, InitialConditions) {
   for (int i = -1; i < EVENT_SIZE; ++i) {
     EXPECT_EQ(GetEventDuration(i, settings, ms), 0);
   }
-  EXPECT_FALSE(IsInLockoutMode(Mode::HEAT, settings.events, EVENT_SIZE, ms));
-  EXPECT_FALSE(IsInLockoutMode(Mode::COOL, settings.events, EVENT_SIZE, ms));
+  EXPECT_FALSE(IsInLockoutMode(HvacMode::HEAT, settings.events, EVENT_SIZE, ms));
+  EXPECT_FALSE(IsInLockoutMode(HvacMode::COOL, settings.events, EVENT_SIZE, ms));
   uint8_t events = 0;
   EXPECT_EQ(CalculateSeconds(true, settings, &events, ms), 0);
   EXPECT_EQ(events, 0);
@@ -49,8 +49,8 @@ TEST(EventsTest, SeveralEvents) {
     settings.events[i].start_time = ms;
   }
   EXPECT_EQ(settings.CurrentEventIndex(), 0);
-  EXPECT_FALSE(IsInLockoutMode(Mode::HEAT, settings.events, EVENT_SIZE, ms));
-  EXPECT_TRUE(IsInLockoutMode(Mode::COOL, settings.events, EVENT_SIZE, ms));
+  EXPECT_FALSE(IsInLockoutMode(HvacMode::HEAT, settings.events, EVENT_SIZE, ms));
+  EXPECT_TRUE(IsInLockoutMode(HvacMode::COOL, settings.events, EVENT_SIZE, ms));
 
   {
     ++i;
@@ -74,14 +74,14 @@ TEST(EventsTest, SeveralEvents) {
 
   EXPECT_EQ(settings.CurrentEventIndex(), 2);
 
-  EXPECT_TRUE(IsInLockoutMode(Mode::HEAT, settings.events, EVENT_SIZE, ms));
-  EXPECT_FALSE(IsInLockoutMode(Mode::COOL, settings.events, EVENT_SIZE, ms));
+  EXPECT_TRUE(IsInLockoutMode(HvacMode::HEAT, settings.events, EVENT_SIZE, ms));
+  EXPECT_FALSE(IsInLockoutMode(HvacMode::COOL, settings.events, EVENT_SIZE, ms));
 
   // Heat for 24 minutes, off for 35 mins, Cool for 17 mins.
   ms += Clock::MinutesToMillis(17);
 
-  EXPECT_FALSE(IsInLockoutMode(Mode::HEAT, settings.events, EVENT_SIZE, ms));
-  EXPECT_FALSE(IsInLockoutMode(Mode::COOL, settings.events, EVENT_SIZE, ms));
+  EXPECT_FALSE(IsInLockoutMode(HvacMode::HEAT, settings.events, EVENT_SIZE, ms));
+  EXPECT_FALSE(IsInLockoutMode(HvacMode::COOL, settings.events, EVENT_SIZE, ms));
 
   EXPECT_EQ(GetEventDuration(0, settings, ms), Clock::MinutesToMillis(24));
   EXPECT_EQ(GetEventDuration(1, settings, ms), Clock::MinutesToMillis(35));

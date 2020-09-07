@@ -84,7 +84,7 @@ static uint32_t GetEventDuration(const uint8_t index, const Settings& settings, 
 
 // This checks if we should be in a 5 minute lockout when switching from cooling to
 // heating or heating to cooling.
-static bool IsInLockoutMode(const Mode mode, const Event* events,
+static bool IsInLockoutMode(const HvacMode mode, const Event* events,
                             const uint8_t events_size, const uint32_t now) {
   constexpr uint32_t kLockoutMs = 5UL * 60UL * 1000UL;
   uint8_t index = 0;
@@ -111,10 +111,10 @@ static bool IsInLockoutMode(const Mode mode, const Event* events,
   }
 
   // Are we actively heating or cooling?
-  if (mode == Mode::COOL && millis_since < kLockoutMs && events[index].hvac == HvacMode::HEAT) {
+  if (mode == HvacMode::COOL && millis_since < kLockoutMs && events[index].hvac == HvacMode::HEAT) {
     return true;
   }
-  if (mode == Mode::HEAT && millis_since < kLockoutMs && events[index].hvac == HvacMode::COOL) {
+  if (mode == HvacMode::HEAT && millis_since < kLockoutMs && events[index].hvac == HvacMode::COOL) {
     return true;
   }
 
@@ -127,11 +127,11 @@ static bool IsInLockoutMode(const Mode mode, const Event* events,
     }
 
     // We use the started time of the newer event to know when it stopped.
-    if (mode == Mode::COOL && events[index].hvac == HvacMode::HEAT) {
+    if (mode == HvacMode::COOL && events[index].hvac == HvacMode::HEAT) {
       return true;
     }
 
-    if (mode == Mode::HEAT && events[index].hvac == HvacMode::COOL) {
+    if (mode == HvacMode::HEAT && events[index].hvac == HvacMode::COOL) {
       return true;
     }
 
