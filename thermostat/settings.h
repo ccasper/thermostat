@@ -11,7 +11,7 @@ namespace thermostat {
 // 65536 is the largest representable value.
 constexpr uint16_t VERSION = 34807;
 
-enum class HvacMode {EMPTY, IDLE, HEAT, COOL};
+enum class HvacMode {EMPTY, IDLE, HEAT, COOL, HEAT_LOCKOUT, COOL_LOCKOUT};
 enum class FanMode {EMPTY, ON, OFF};
 
 constexpr char daysOfTheWeek[7][3] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
@@ -69,6 +69,7 @@ class Event {
 
     // The temperature when the event occurred.
     int16_t temperature_x10;
+    int16_t temperature_10min_x10;
     uint32_t start_time;
 };
 
@@ -80,15 +81,21 @@ struct Settings {
   // Use SetChanged() to update EEPROM data and this bit.
   uint8_t changed : 1;  // one bit.
 
-  // TODO(): use HvacMode and FanMode in Settings instead of the booleans.
+  // TODO(): Use these instead of the booleans. These are currently
+  // not used.
+  HvacMode hvac_state;
+  FanMode fan_state;
 
+  
   // Is cooling actively running.
+  // TODO(): Remove these in favor of hvac_state.
   bool cool_running = 0;
   
   // Is heating actively running.
   bool heat_running = 0;
 
   // Is fan actively running.
+  // TODO(): Remove this in favor of fan_state.
   bool fan_running = 0;
 
   // Snapshot of current humidity.
@@ -113,6 +120,13 @@ struct Settings {
   // Events initialize to field empty = true.
   Event events[EVENT_SIZE] = {};
 
+  // TODO(): Get rid of these after transitioning to always using HvacMode.
+  bool IsHeatRunning() {
+    return hvac_state == HvacMode::HEAT;
+  }
+  bool IsCoolRunning() {
+    return hvac_state == HvacMode::COOL;
+  }
   HvacMode GetHvacMode() const {
     if (heat_running) { return HvacMode::HEAT; }
     if (cool_running) { return HvacMode::COOL; }

@@ -275,7 +275,8 @@ class Menus {
             break;
           case 4:
             display_->SetCursor(0, 1);
-            display_->print("Status 4: ");
+            display_->print("Heat T/m: ");
+            display_->print(GetHeatTempPerMin(*settings_, clock_->Millis()));
             button = wait_for_button_press_(10000);
             break;
           case 5:

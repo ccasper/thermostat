@@ -6,6 +6,13 @@
 #include "settings.h"
 
 namespace thermostat {
+ 
+static HvacMode SanitizeHvacMode(const HvacMode mode) {
+  if (mode == HvacMode::HEAT || mode == HvacMode::COOL) {
+    return mode;
+  }
+  return HvacMode::IDLE;
+}
 
 static void AddOrUpdateEvent(const uint32_t now, Settings* const settings) {
   // Clear any events that are over a month old.
@@ -24,10 +31,18 @@ static void AddOrUpdateEvent(const uint32_t now, Settings* const settings) {
   if (settings->event_index == 255) {
     make_new_event = true;
   }
-
-  Event* event = &settings->events[settings->event_index];
-  if (settings->GetHvacMode() != event->hvac) {
+ 
+  Event* const event = &settings->events[settings->event_index];
+  const HvacMode hvac = SanitizeHvacMode(settings->GetHvacMode());
+  if (hvac != event->hvac) {    
     make_new_event = true;
+  }
+
+  // Update the 10 minute temperature when heating more than 10 minutes.
+  if (hvac == HvacMode::HEAT) {
+    if (Clock::millisDiff(event->start_time, now) > Clock::MinutesToMillis(10)) {
+      event->temperature_10min_x10 = settings->current_mean_temperature_x10;
+    }
   }
   
   if (settings->GetFanMode() != event->fan) {
@@ -43,6 +58,40 @@ static void AddOrUpdateEvent(const uint32_t now, Settings* const settings) {
     new_event->hvac = settings->GetHvacMode();
     new_event->fan = settings->GetFanMode();
   }
+}
+
+
+static float GetHeatTempPerMin(const Settings& settings, const uint32_t now) {
+  // Find the average 10 minute temperature difference when heating (in the last 2 days).
+  uint8_t count = 0;
+  uint32_t sum = 0;
+  // Find any events in the last 2 days that have heat and 10 minute temperatures.
+  for (uint8_t i = 0; i < EVENT_SIZE; ++i) {
+    const Event* const event = &settings.events[i];
+
+    if (event->empty()) {
+      continue;
+    }
+
+    if (Clock::millisDiff(event->start_time, now) > Clock::DaysToMillis(2)) {
+      continue;
+    }
+    
+    if (event->hvac != HvacMode::HEAT) {
+      continue;
+    }
+    
+    count++;
+    sum += (event->temperature_10min_x10 - event->temperature_x10);
+  }
+
+  // Use this heat/time as the basis for the temperature.
+  // Complete guesses atm.
+  // if ~ 1*/min set to 15%
+  // if ~ 2*/min set to 25%
+  // if ~ 3*/min set to 35%
+
+  return static_cast<float>(sum) / /*x10*/ 10.0 / count / 9.5 /*mins (30 seconds? for heater warmup)*/;
 }
 
 // Returns Zero when empty, otherwise the length of time for the event.

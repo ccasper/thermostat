@@ -106,5 +106,44 @@ TEST(EventsTest, SeveralEvents) {
   //    event->temperature_x10 = settings->current_mean_temperature_x10;
 }
 
+TEST(EventsTest, GetHeatTempPerMin) {
+  Settings settings;
+  ClockStub clock;
+  
+  clock.SetMillis(Clock::HoursToMillis(0));
+  settings.events[3].hvac = HvacMode::HEAT;
+  settings.events[3].start_time = clock.Millis();
+  settings.events[3].temperature_x10 = 600;
+  settings.events[3].temperature_10min_x10 = 800;
+
+  // Move to just before 2 days between events.
+  clock.SetMillis(Clock::HoursToMillis(47));
+      
+  float temp_per_min = GetHeatTempPerMin(settings, clock.Millis());
+  
+  EXPECT_FLOAT_EQ(temp_per_min, 20 / 9.5); 
+
+  // Add a second event now.
+  settings.events[5].hvac = HvacMode::HEAT;
+  settings.events[5].start_time = clock.Millis();
+  settings.events[5].temperature_x10 = 700;
+  settings.events[5].temperature_10min_x10 = 750;
+
+  {
+    float temp_per_min = GetHeatTempPerMin(settings, clock.Millis());
+    // Average of the two.
+    EXPECT_FLOAT_EQ(temp_per_min, (20 + 5) / 9.5 / 2); 
+  }
+
+  // Move beyond the first event, so we only have the second event.
+  clock.SetMillis(Clock::HoursToMillis(49));
+  {
+    float temp_per_min = GetHeatTempPerMin(settings, clock.Millis());
+    // Only the newest value should be accounted for.
+    EXPECT_FLOAT_EQ(temp_per_min, 5 / 9.5); 
+  }
+  
+}
+
 }  // namespace
 }  // namespace thermostat

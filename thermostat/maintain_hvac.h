@@ -328,6 +328,8 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
   if (settings->heat_running) {
     relays->Set(RelayType::kHeat, RelayState::kOn);
     relays->Set(RelayType::kCool, RelayState::kOff);
+    // TODO(): Move display writing out of this class. All these
+    // states should be available in Settings.
     display->write('H');
   } else if (settings->cool_running) {
     relays->Set(RelayType::kHeat, RelayState::kOff);
@@ -348,6 +350,7 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
   // Update the fan control based on the current settings.
   fan->Maintain(settings);
   if (settings->fan_running) {
+    // TODO(): Move display writing out of this class.
     display->write('F');
     relays->Set(RelayType::kFan, RelayState::kOn);
   } else {
