@@ -14,17 +14,17 @@ namespace thermostat {
 class FanController {
   public:
     explicit FanController(Clock* clock) : clock_(clock), last_maintain_time_(clock->Millis()) {}
-    
+
     void Maintain(Settings* const settings) {
       // Keep the last_hvac_on time set.
       if (settings->GetHvacMode() == HvacMode::HEAT || settings->GetHvacMode() == HvacMode::COOL) {
         last_hvac_on_set_ = true;
         last_hvac_on_ = clock_->Millis();
       }
-      
+
       // Get the persisted fan setting.
       bool fan_enable = settings->persisted.fan_always_on;
-      
+
       // Allow the fan to run 30 minutes every X minutes.
       const uint32_t fan_period_sec = static_cast<uint32_t>(settings->persisted.fan_on_min_period) * 60;
 
@@ -57,10 +57,10 @@ class FanController {
         fan_enable = true;
       }
 
-      last_maintain_time_= clock_->Millis();
+      last_maintain_time_ = clock_->Millis();
 
       //LOG(INFO) << "Cycle seconds: " << cycle_seconds;
-      
+
       // Keep the fan running until we meet the desired duty cycle run length.
       if (fan_is_running && cycle_seconds > 0) {
         //LOG(INFO) << "Cycle Duty fan on";
@@ -76,9 +76,9 @@ class FanController {
     // We increment for each second the fan is off and decrement (1 second / duty%) for every second fan on.
     // Each time the hvac runs, we run until this counter reaches zero. To handle hvac off cases, when the cycle counter reaches the cycle period, the fan will be forced on.
     Clock* clock_;
-    
+
     float cycle_seconds = 0;
-    
+
     uint32_t last_maintain_time_ = 0;
     bool last_hvac_on_set_ = false;
     uint32_t last_hvac_on_ = 0;

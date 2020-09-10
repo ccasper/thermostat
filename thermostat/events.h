@@ -6,7 +6,7 @@
 #include "settings.h"
 
 namespace thermostat {
- 
+
 static HvacMode SanitizeHvacMode(const HvacMode mode) {
   if (mode == HvacMode::HEAT || mode == HvacMode::COOL) {
     return mode;
@@ -16,7 +16,7 @@ static HvacMode SanitizeHvacMode(const HvacMode mode) {
 
 static void AddOrUpdateEvent(const Clock& clock, Settings* const settings) {
   const uint32_t now = clock.Millis();
-  
+
   // Clear any events that are over a month old.
   for (uint8_t i = 0; i < EVENT_SIZE; ++i) {
     if (settings->events[i].empty()) {
@@ -33,10 +33,10 @@ static void AddOrUpdateEvent(const Clock& clock, Settings* const settings) {
   if (settings->event_index == 255) {
     make_new_event = true;
   }
- 
+
   Event* const event = &settings->events[settings->event_index];
   const HvacMode hvac = SanitizeHvacMode(settings->GetHvacMode());
-  if (hvac != event->hvac) {    
+  if (hvac != event->hvac) {
     make_new_event = true;
   }
 
@@ -46,7 +46,7 @@ static void AddOrUpdateEvent(const Clock& clock, Settings* const settings) {
       event->temperature_10min_x10 = settings->current_mean_temperature_x10;
     }
   }
-  
+
   if (settings->GetFanMode() != event->fan) {
     make_new_event = true;
   }
@@ -79,11 +79,11 @@ static float GetHeatTempPerMin(const Settings& settings, const Clock& clock) {
     if (Clock::millisDiff(event->start_time, now) > Clock::DaysToMillis(2)) {
       continue;
     }
-    
+
     if (event->hvac != HvacMode::HEAT) {
       continue;
     }
-    
+
     count++;
     sum += (event->temperature_10min_x10 - event->temperature_x10);
   }
@@ -113,10 +113,10 @@ static uint32_t GetEventDuration(const uint8_t index, const Settings& settings, 
   const uint8_t next_index = (index + 1) % EVENT_SIZE;
   // When we don't have an event after this, then we use the current time.
   if (settings.events[next_index].empty()) {
-    return Clock::millisDiff(settings.events[index].start_time, now);
+    return Clock::secondsDiff(settings.events[index].start_time, now);
   }
-  return Clock::millisDiff(settings.events[index].start_time,
-                           settings.events[next_index].start_time);
+  return Clock::MillisToSeconds(Clock::millisDiff(settings.events[index].start_time,
+                                settings.events[next_index].start_time));
 }
 
 //// Returns true if found and value passed back in diff parameter.
@@ -225,10 +225,10 @@ static uint32_t CalculateSeconds(const bool running, const Settings& settings,
 
   // Loop through all the stored events.
   for (int idx = 0; idx < EVENT_SIZE; ++idx) {
-    const uint32_t duration_ms = GetEventDuration(idx, settings, clock);
+    const uint32_t duration = GetEventDuration(idx, settings, clock);
 
     // Only sum events that valid and have a duration.
-    if (duration_ms == 0) {
+    if (duration == 0) {
       continue;
     }
 
@@ -239,7 +239,7 @@ static uint32_t CalculateSeconds(const bool running, const Settings& settings,
       continue;
     }
 
-    total_seconds += duration_ms / 1000;
+    total_seconds += duration / 1000;
     ++total_events;
   }
 

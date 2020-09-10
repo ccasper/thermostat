@@ -68,7 +68,7 @@ class Clock {
     // Calculate the millis since the previous time accounting for wrap around.
     static constexpr uint32_t secondsDiff(const uint32_t previous, const uint32_t next) {
       // Millis rolls over after about 50 days, the unsigned subtraction accounts for this.
-      return Clock::millisDiff(previous,next) / 1000;
+      return Clock::millisDiff(previous, next) / 1000;
     }
 
     // Calculate the millis since the previous time accounting for wrap around.
@@ -115,7 +115,7 @@ class Display : public Print {
 };
 
 class Sensor {
-  public:    
+  public:
     // Most sensors implement this.
     virtual void StartRequestAsync() = 0;
 

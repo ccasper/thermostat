@@ -252,20 +252,20 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
       print->print("-");
       print->print(settings->persisted.tolerance_x10);
     }
-// Temperature behavior chart
-//
-// Temp| Action
-// ------------
-// 74.0|-- Cool on (> setpoint)
-//     |
-// 72.9|-- Cool stop based on tolerance (1.1)
-//     |
-//     | [HVAC idle]
-//     |
-// 71.1|-- Heat stop based on tolerance (1.1)
-//     |
-// 70.0|-- Heat on (< setpoint)
-    
+    // Temperature behavior chart
+    //
+    // Temp| Action
+    // ------------
+    // 74.0|-- Cool on (> setpoint)
+    //     |
+    // 72.9|-- Cool stop based on tolerance (1.1)
+    //     |
+    //     | [HVAC idle]
+    //     |
+    // 71.1|-- Heat stop based on tolerance (1.1)
+    //     |
+    // 70.0|-- Heat on (< setpoint)
+
     // Assuming Set point is 70 and current room temp is 69.9, we should enable heating.
     if (settings->persisted.heat_enabled && temperature_mean < setpoint_temperature_x10) {
       // Start heating, we've reached our heating setpoint.
@@ -300,8 +300,8 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
     // of 2.
     if (temperature_mean > cool_temperature_x10) {
       if (IsInLockoutMode(HvacMode::COOL, settings->events, 10, *clock)) {
-         settings->hvac = HvacMode::COOL_LOCKOUT;
-       } else {
+        settings->hvac = HvacMode::COOL_LOCKOUT;
+      } else {
         // Heat and Cool at the same time should never happen,
         // set an error.
         if (settings->hvac == HvacMode::HEAT) {

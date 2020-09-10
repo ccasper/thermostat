@@ -54,16 +54,16 @@ struct PersistedSettings {
 class Event {
   public:
     Event() : hvac(HvacMode::EMPTY), fan(FanMode::EMPTY) {}
-    
+
     bool empty() const {
       return hvac == HvacMode::EMPTY && fan == FanMode::EMPTY;
     }
-    
+
     void set_empty() {
       hvac = HvacMode::EMPTY;
       fan = FanMode::EMPTY;
     }
-    
+
     HvacMode hvac;
     FanMode fan;
 
