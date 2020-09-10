@@ -14,7 +14,9 @@ static HvacMode SanitizeHvacMode(const HvacMode mode) {
   return HvacMode::IDLE;
 }
 
-static void AddOrUpdateEvent(const uint32_t now, Settings* const settings) {
+static void AddOrUpdateEvent(const Clock& clock, Settings* const settings) {
+  const uint32_t now = clock.Millis();
+  
   // Clear any events that are over a month old.
   for (uint8_t i = 0; i < EVENT_SIZE; ++i) {
     if (settings->events[i].empty()) {
@@ -61,7 +63,8 @@ static void AddOrUpdateEvent(const uint32_t now, Settings* const settings) {
 }
 
 
-static float GetHeatTempPerMin(const Settings& settings, const uint32_t now) {
+static float GetHeatTempPerMin(const Settings& settings, const Clock& clock) {
+  const uint32_t now = clock.Millis();
   // Find the average 10 minute temperature difference when heating (in the last 2 days).
   uint8_t count = 0;
   uint32_t sum = 0;
@@ -95,7 +98,8 @@ static float GetHeatTempPerMin(const Settings& settings, const uint32_t now) {
 }
 
 // Returns Zero when empty, otherwise the length of time for the event.
-static uint32_t GetEventDuration(const uint8_t index, const Settings& settings, const uint32_t now) {
+static uint32_t GetEventDuration(const uint8_t index, const Settings& settings, const Clock& clock) {
+  const uint32_t now = clock.Millis();
   // If the event is empty, we don't have a duration.
 
   if (index >= EVENT_SIZE) {
@@ -134,7 +138,8 @@ static uint32_t GetEventDuration(const uint8_t index, const Settings& settings, 
 // This checks if we should be in a 5 minute lockout when switching from cooling to
 // heating or heating to cooling.
 static bool IsInLockoutMode(const HvacMode mode, const Event* events,
-                            const uint8_t events_size, const uint32_t now) {
+                            const uint8_t events_size, const Clock& clock) {
+  const uint32_t now = clock.Millis();
   constexpr uint32_t kLockoutMs = 5UL * 60UL * 1000UL;
   uint8_t index = 0;
   uint32_t millis_since = 0xFFFFFFFF;  // some big number
@@ -196,16 +201,16 @@ static bool IsInLockoutMode(const HvacMode mode, const Event* events,
 }
 
 
-static uint32_t CalculateSeconds(bool running, const Settings& settings, uint8_t* events, uint32_t now);
+static uint32_t CalculateSeconds(bool running, const Settings& settings, uint8_t* events, const Clock& clock);
 
-static float OnPercent(const Settings& settings, const uint32_t now) {
+static float OnPercent(const Settings& settings, const Clock& clock) {
   const int current_index = settings.CurrentEventIndex();
   if (current_index == -1) {
     return 0;
   }
   uint8_t event_count_noop;
-  const uint32_t on_seconds = CalculateSeconds(true, settings, &event_count_noop, now);
-  const uint32_t off_seconds = CalculateSeconds(false, settings, &event_count_noop, now);
+  const uint32_t on_seconds = CalculateSeconds(true, settings, &event_count_noop, clock);
+  const uint32_t off_seconds = CalculateSeconds(false, settings, &event_count_noop, clock);
   if (off_seconds == 0 && on_seconds == 0) {
     return 0;
   }
@@ -214,16 +219,16 @@ static float OnPercent(const Settings& settings, const uint32_t now) {
 
 // Returns how long the system has been either running or not running.
 static uint32_t CalculateSeconds(const bool running, const Settings& settings,
-                                 uint8_t* const events, const uint32_t now) {
+                                 uint8_t* const events, const Clock& clock) {
   uint32_t total_seconds = 0;
   uint32_t total_events = 0;
 
   // Loop through all the stored events.
   for (int idx = 0; idx < EVENT_SIZE; ++idx) {
-    const uint32_t duration = GetEventDuration(idx, settings, now);
+    const uint32_t duration_ms = GetEventDuration(idx, settings, clock);
 
     // Only sum events that valid and have a duration.
-    if (duration == 0) {
+    if (duration_ms == 0) {
       continue;
     }
 
@@ -234,7 +239,7 @@ static uint32_t CalculateSeconds(const bool running, const Settings& settings,
       continue;
     }
 
-    total_seconds += duration / 1000;
+    total_seconds += duration_ms / 1000;
     ++total_events;
   }
 

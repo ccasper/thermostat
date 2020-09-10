@@ -29,7 +29,7 @@ class Clock {
     virtual Date Now() = 0;
     virtual void Set(const Date& date) = 0;
 
-    virtual uint32_t Millis() = 0;
+    virtual uint32_t Millis() const = 0;
 
     // Calculate the millis since the previous time accounting for wrap around.
     uint32_t millisSince(const uint32_t previous) {
@@ -38,33 +38,41 @@ class Clock {
 
     // Calculate the millis since the previous time accounting for wrap around.
     uint32_t secondsSince(const uint32_t previous) {
-      return millisDiff(previous, Millis()) / 1000 /*sec*/;
+      return millisDiff(previous, Millis()) / 1000 /*ms/sec*/;
     }
 
     // Calculate the millis since the previous time accounting for wrap around.
     uint32_t minutesSince(const uint32_t previous) {
-      return millisDiff(previous, Millis()) / 1000 /*sec*/ / 60 /*minutes*/;
+      return millisDiff(previous, Millis()) / 1000 /*ms/sec*/ / 60 /*sec/min*/;
     }
-
+    // Calculate the millis since the previous time accounting for wrap around.
+    uint32_t hoursSince(const uint32_t previous) {
+      return minutesSince(previous) / 60 /*mins/hour*/;
+    }
     // Calculate the millis since the previous time accounting for wrap around.
     uint32_t daysSince(const uint32_t previous) {
-      return minutesSince(previous) / 60 /*hours*/ / 24 /*hours*/;
+      return minutesSince(previous) / 60 /*mins/hour*/ / 24 /*hours/day*/;
     }
 
     // Calculate the millis since the previous time accounting for wrap around.
-    static uint32_t daysDiff(const uint32_t previous, const uint32_t next) {
+    static constexpr uint32_t daysDiff(const uint32_t previous, const uint32_t next) {
       // Millis rolls over after about 50 days, the unsigned subtraction accounts for this.
       return Clock::MillisToDays(Clock::millisDiff(previous, next));
     }
 
     // Calculate the millis since the previous time accounting for wrap around.
-    static uint32_t MinutesDiff(const uint32_t previous, const uint32_t next) {
+    static constexpr uint32_t MinutesDiff(const uint32_t previous, const uint32_t next) {
       // Millis rolls over after about 50 days, the unsigned subtraction accounts for this.
       return Clock::MillisToMinutes(Clock::millisDiff(previous, next));
     }
+    // Calculate the millis since the previous time accounting for wrap around.
+    static constexpr uint32_t secondsDiff(const uint32_t previous, const uint32_t next) {
+      // Millis rolls over after about 50 days, the unsigned subtraction accounts for this.
+      return Clock::millisDiff(previous,next) / 1000;
+    }
 
     // Calculate the millis since the previous time accounting for wrap around.
-    static uint32_t millisDiff(const uint32_t previous, const uint32_t next) {
+    static constexpr uint32_t millisDiff(const uint32_t previous, const uint32_t next) {
       // Millis rolls over after about 50 days, the unsigned subtraction accounts for this.
       return next - previous;
     }
@@ -73,24 +81,28 @@ class Clock {
     static constexpr uint32_t SecondsToMillis(const uint32_t& seconds) {
       return seconds * 1000;
     }
-
     // Converts Millis to Minutes for easier comparison.
     static constexpr uint32_t MinutesToMillis(const uint32_t& minutes) {
-      return minutes * 60 * 1000;
+      return SecondsToMillis(minutes * 60);
     }
-
     // Convert Hours to Millis for easier comparison.
     static constexpr uint32_t HoursToMillis(const uint32_t& hours) {
-      return hours * 60 * 60 * 1000;
+      return MinutesToMillis(hours * 60);
     }
     static constexpr uint32_t DaysToMillis(const uint32_t& days) {
-      return days * 1000 * 60 * 60 * 24;
-    }
-    static constexpr uint32_t MillisToMinutes(const uint32_t ms) {
-      return ms / 1000 / 60;
+      return HoursToMillis(days * 24);
     }
     static constexpr uint32_t MillisToDays(const uint32_t ms) {
-      return ms / 1000 / 60 / 60 / 24;
+      return MillisToHours(ms) / 24;
+    }
+    static constexpr uint32_t MillisToHours(const uint32_t ms) {
+      return MillisToMinutes(ms) / 60;
+    }
+    static constexpr uint32_t MillisToMinutes(const uint32_t ms) {
+      return MillisToSeconds(ms) / 60;
+    }
+    static constexpr uint32_t MillisToSeconds(const uint32_t ms) {
+      return ms / 1000;
     }
 };
 

@@ -83,20 +83,8 @@ struct Settings {
 
   // TODO(): Use these instead of the booleans. These are currently
   // not used.
-  HvacMode hvac_state;
-  FanMode fan_state;
-
-  
-  // Is cooling actively running.
-  // TODO(): Remove these in favor of hvac_state.
-  bool cool_running = 0;
-  
-  // Is heating actively running.
-  bool heat_running = 0;
-
-  // Is fan actively running.
-  // TODO(): Remove this in favor of fan_state.
-  bool fan_running = 0;
+  HvacMode hvac;
+  FanMode fan;
 
   // Snapshot of current humidity.
   uint8_t current_humidity = 0;
@@ -122,20 +110,17 @@ struct Settings {
 
   // TODO(): Get rid of these after transitioning to always using HvacMode.
   bool IsHeatRunning() {
-    return hvac_state == HvacMode::HEAT;
+    return hvac == HvacMode::HEAT;
   }
   bool IsCoolRunning() {
-    return hvac_state == HvacMode::COOL;
+    return hvac == HvacMode::COOL;
   }
   HvacMode GetHvacMode() const {
-    if (heat_running) { return HvacMode::HEAT; }
-    if (cool_running) { return HvacMode::COOL; }
-    return HvacMode::IDLE;
+    return hvac;
   }
 
   FanMode GetFanMode() const {
-    if (fan_running) { return FanMode::ON; }
-    return FanMode::OFF;
+    return fan;
   }
 
   int CurrentEventIndex() const {

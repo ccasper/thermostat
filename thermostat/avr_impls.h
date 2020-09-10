@@ -171,7 +171,7 @@ class RealClock : public Clock {
   public:
     RealClock() : rtc_(0x68, URTCLIB_MODEL_DS1307) {};
 
-    uint32_t Millis() override {
+    uint32_t Millis() const override {
       return millis();
     };
 

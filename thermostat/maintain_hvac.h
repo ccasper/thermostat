@@ -227,20 +227,17 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
   print->print(settings->persisted.tolerance_x10);
   print->print("\r\n");
 
-  bool lockout_heat = false;
-  bool lockout_cool = false;
-
   // If heating is on, keep the temperature above the setpoint.
   // If cooling is on, keep the temperature below the setpont.
   // cool to the setpoint. If off, drift to the setpoint plus the tolerance.
   // Should we enable/disable heating mode?
-  if (settings->heat_running) {
+  if (settings->hvac == HvacMode::HEAT) {
     print->print("Heat running\r\n");
 
     if (temperature_mean >= setpoint_temperature_x10 + settings->persisted.tolerance_x10) {
       print->print("Reached setpoint\r\n");
       // Stop heating, we've reached the tolerance above the heating setpoint.
-      settings->heat_running = false;
+      settings->hvac = HvacMode::IDLE;
     }
   } else {
     print->print("Heat not running\r\n");
@@ -255,23 +252,37 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
       print->print("-");
       print->print(settings->persisted.tolerance_x10);
     }
-    // Assuming Set point is 70 and current room temp is 68, we should enable heating if
-    // tolerance is 2.
+// Temperature behavior chart
+//
+// Temp| Action
+// ------------
+// 74.0|-- Cool on (> setpoint)
+//     |
+// 72.9|-- Cool stop based on tolerance (1.1)
+//     |
+//     | [HVAC idle]
+//     |
+// 71.1|-- Heat stop based on tolerance (1.1)
+//     |
+// 70.0|-- Heat on (< setpoint)
+    
+    // Assuming Set point is 70 and current room temp is 69.9, we should enable heating.
     if (settings->persisted.heat_enabled && temperature_mean < setpoint_temperature_x10) {
       // Start heating, we've reached our heating setpoint.
-      if (!IsInLockoutMode(HvacMode::HEAT, settings->events, 10, now)) {
-        settings->heat_running = true;
+      if (IsInLockoutMode(HvacMode::HEAT, settings->events, 10, *clock)) {
+        settings->hvac = HvacMode::HEAT_LOCKOUT;
       } else {
-        lockout_heat = true;
+        settings->hvac = HvacMode::HEAT;
       }
     }
   }
 
   // Prevent/Stop heating, we're disabled.
   if (!settings->persisted.heat_enabled) {
-    settings->heat_running = false;
-    lockout_heat = false;
+    settings->hvac = HvacMode::IDLE;
   }
+
+  Error status = Error::STATUS_OK;
 
   // If the setpoint is 75°, we attempt to keep cooler than this temperature at all times.
   //
@@ -279,39 +290,37 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
   // cooling to turn on.
   const int cool_temperature_x10 = GetSetpointTemp(*settings, clock->Now(), HvacMode::COOL);
   // Should we enable/disable cooling mode?
-  if (settings->cool_running) {
+  if (settings->hvac == HvacMode::COOL) {
     if (temperature_mean <= cool_temperature_x10 - settings->persisted.tolerance_x10) {
       // Stop cooling, we've reached the our lower tolerance limit.
-      settings->cool_running = false;
+      settings->hvac = HvacMode::IDLE;
     }
   } else {
     // Assuming a set point of 70, we should start cooling at 72 with a tolerance set
     // of 2.
     if (temperature_mean > cool_temperature_x10) {
-      if (!IsInLockoutMode(HvacMode::COOL, settings->events, 10, now)) {
-        // Start cooling, we've reached the cooling setpoint.
-        settings->cool_running = true;
-      } else {
-        lockout_cool = true;
+      if (IsInLockoutMode(HvacMode::COOL, settings->events, 10, *clock)) {
+         settings->hvac = HvacMode::COOL_LOCKOUT;
+       } else {
+        // Heat and Cool at the same time should never happen,
+        // set an error.
+        if (settings->hvac == HvacMode::HEAT) {
+          status = Error::HEAT_AND_COOL;
+          settings->hvac = HvacMode::IDLE;
+        } else {
+          // Start cooling, we've reached the cooling setpoint.
+          settings->hvac = HvacMode::COOL;
+        }
       }
     }
   }
 
   // Stop/prevent cooling, we're disabled.
   if (!settings->persisted.cool_enabled) {
-    settings->cool_running = false;
-    lockout_cool = false;
-  }
-  Error status = Error::STATUS_OK;
-
-  // This should never happen, but disable both if both are enabled.
-  if (settings->heat_running && settings->cool_running) {
-    status = Error::HEAT_AND_COOL;
-    settings->heat_running = false;
-    settings->cool_running = false;
+    settings->hvac = HvacMode::IDLE;
   }
 
-  if (settings->heat_running && settings->current_humidity < settings->persisted.humidity) {
+  if (settings->hvac == HvacMode::HEAT && settings->current_humidity < settings->persisted.humidity) {
     // Allow humidifier only when heating. During hot A/C days, we want as much humidity
     // removed as possible.
     relays->Set(RelayType::kHumidifier, RelayState::kOn);
@@ -325,22 +334,22 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
   // 'h'= Heating wants to run but cooling ran too recently so it's in lockout mode yet.
   // 'H'= Heating is turned on.
   // '_'= The thermostat is not actively requesting heating or cooling.
-  if (settings->heat_running) {
+  if (settings->hvac == HvacMode::HEAT) {
     relays->Set(RelayType::kHeat, RelayState::kOn);
     relays->Set(RelayType::kCool, RelayState::kOff);
     // TODO(): Move display writing out of this class. All these
     // states should be available in Settings.
     display->write('H');
-  } else if (settings->cool_running) {
+  } else if (settings->hvac == HvacMode::COOL) {
     relays->Set(RelayType::kHeat, RelayState::kOff);
     relays->Set(RelayType::kCool, RelayState::kOn);
     display->write('C');
   } else {
     relays->Set(RelayType::kHeat, RelayState::kOff);
     relays->Set(RelayType::kCool, RelayState::kOff);
-    if (lockout_heat) {
+    if (settings->hvac == HvacMode::HEAT_LOCKOUT) {
       display->write('h');
-    } else if (lockout_cool) {
+    } else if (settings->hvac == HvacMode::COOL_LOCKOUT) {
       display->write('c');
     } else {
       display->write('_');
@@ -349,7 +358,7 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
 
   // Update the fan control based on the current settings.
   fan->Maintain(settings);
-  if (settings->fan_running) {
+  if (settings->fan == FanMode::ON) {
     // TODO(): Move display writing out of this class.
     display->write('F');
     relays->Set(RelayType::kFan, RelayState::kOn);
@@ -359,7 +368,7 @@ Error MaintainHvac(Settings *settings, Clock *clock, Display *display, Relays *r
   }
 
   // Maintain the historical events list.
-  AddOrUpdateEvent(now, settings);
+  AddOrUpdateEvent(*clock, settings);
 
   // The very last character in the first row is for an error flag for debugging.
   return status;

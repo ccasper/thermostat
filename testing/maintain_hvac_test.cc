@@ -125,7 +125,7 @@ TEST_F(MaintainHvacTest, HeatEnabled) {
 
   // Verify that heat was enabled.
   EXPECT_EQ(display.GetChar(0, kHvacField), 'H');
-  EXPECT_TRUE(settings.heat_running);
+  EXPECT_EQ(settings.hvac, HvacMode::HEAT);
 
   // Increment slightly more than 2.5 seconds.
   clock.Increment(3000);
@@ -140,7 +140,7 @@ TEST_F(MaintainHvacTest, HeatEnabled) {
             Error::STATUS_OK);
 
   // Verify that heat was disabled.
-  EXPECT_FALSE(settings.heat_running);
+  EXPECT_EQ(settings.hvac, HvacMode::IDLE);
   EXPECT_EQ(display.GetChar(0, kHvacField), '_');
 }
 
@@ -184,7 +184,7 @@ TEST_F(MaintainHvacTest, CoolEnabled) {
 
   // Verify that cool was enabled.
   EXPECT_EQ(display.GetChar(0, kHvacField), 'C');
-  EXPECT_TRUE(settings.cool_running);
+  EXPECT_EQ(settings.hvac, HvacMode::COOL);
 
   // Increment slightly more than 2.5 seconds.
   clock.Increment(3000);
@@ -199,7 +199,7 @@ TEST_F(MaintainHvacTest, CoolEnabled) {
             Error::STATUS_OK);
 
   // Verify that heat was disabled.
-  EXPECT_FALSE(settings.cool_running);
+  EXPECT_EQ(settings.hvac, HvacMode::IDLE);
   EXPECT_EQ(display.GetChar(0, kHvacField), '_');
 }
 
@@ -226,8 +226,7 @@ TEST_F(MaintainHvacTest, CoolThenHeat) {
             Error::STATUS_OK);
   clock.Increment(3000);  // 3 seconds on.
 
-  EXPECT_TRUE(settings.cool_running);
-  EXPECT_FALSE(settings.heat_running);
+  EXPECT_EQ(settings.hvac, HvacMode::COOL);
 
   // Cooling off.
   settings.persisted.cool_setpoints[0].temperature_x10 = 800;
@@ -245,8 +244,7 @@ TEST_F(MaintainHvacTest, CoolThenHeat) {
 
   // Verify that heat is in lockout.
   EXPECT_EQ(display.GetChar(0, kHvacField), 'h');
-  EXPECT_FALSE(settings.heat_running);
-  EXPECT_FALSE(settings.cool_running);
+  EXPECT_EQ(settings.hvac, HvacMode::HEAT_LOCKOUT);
 
   // Attempt heating again.
   EXPECT_EQ(MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
@@ -255,15 +253,18 @@ TEST_F(MaintainHvacTest, CoolThenHeat) {
 
   // Verify that heat is enabled.
   EXPECT_EQ(display.GetChar(0, kHvacField), 'H');
-  EXPECT_TRUE(settings.heat_running);
-  EXPECT_FALSE(settings.cool_running);
+  EXPECT_EQ(settings.hvac, HvacMode::HEAT);
 }
 
 TEST_F(MaintainHvacTest, HeatThenCool) {
   // Prime the async requests.
+  settings.persisted.cool_enabled = false;
+  settings.persisted.heat_enabled = false;
+  
   EXPECT_EQ(MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
                          &dallas_sensor, &print),
             Error::STATUS_OK);
+  ASSERT_EQ(settings.hvac, HvacMode::IDLE);
   clock.Increment(3000);  // 3 seconds off.
 
   settings.persisted.cool_enabled = true;
@@ -279,8 +280,7 @@ TEST_F(MaintainHvacTest, HeatThenCool) {
             Error::STATUS_OK);
   clock.Increment(3000);  // 3 seconds on.
 
-  EXPECT_TRUE(settings.heat_running);
-  EXPECT_FALSE(settings.cool_running);
+  EXPECT_EQ(settings.hvac, HvacMode::HEAT);
 
   // Heat off,
   settings.persisted.heat_setpoints[0].temperature_x10 = 600;
@@ -297,14 +297,13 @@ TEST_F(MaintainHvacTest, HeatThenCool) {
 
   // Check the events queue.
   uint8_t events;
-  EXPECT_EQ(CalculateSeconds(true, settings, &events, clock.Millis()), 3);
-  EXPECT_EQ(CalculateSeconds(false, settings, &events, clock.Millis()), 3 + 4 * 60);
+  EXPECT_EQ(CalculateSeconds(true, settings, &events, clock), 3);
+  EXPECT_EQ(CalculateSeconds(false, settings, &events, clock), 3 + 4 * 60);
   EXPECT_EQ(events, 2);
 
   // Verify that cool is in lockout.
   EXPECT_EQ(display.GetChar(0, kHvacField), 'c');
-  EXPECT_FALSE(settings.heat_running);
-  EXPECT_FALSE(settings.cool_running);
+  EXPECT_EQ(settings.hvac, HvacMode::COOL_LOCKOUT);
 
   // Should still be in lockout 4 minutes later.
   EXPECT_EQ(MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
@@ -324,14 +323,13 @@ TEST_F(MaintainHvacTest, HeatThenCool) {
 
   // Verify that cool is enabled.
   EXPECT_EQ(display.GetChar(0, kHvacField), 'C');
-  EXPECT_FALSE(settings.heat_running);
-  EXPECT_TRUE(settings.cool_running);
+  EXPECT_EQ(settings.hvac, HvacMode::COOL);
 
   // Check seconds running in the events queue.
   EXPECT_EQ(events, 2);
-  EXPECT_EQ(CalculateSeconds(true, settings, &events, clock.Millis()), 3 + 6);
+  EXPECT_EQ(CalculateSeconds(true, settings, &events, clock), 3 + 6);
   // Check seconds not running in the events queue.
-  EXPECT_EQ(CalculateSeconds(false, settings, &events, clock.Millis()), 6 * 60 + 3);
+  EXPECT_EQ(CalculateSeconds(false, settings, &events, clock), 6 * 60 + 3);
 }
 
 TEST_F(MaintainHvacTest, TemperatureStability) {

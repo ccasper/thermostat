@@ -34,7 +34,7 @@ class FanController {
         fan_enable = true;
       }
 
-      const bool fan_is_running = settings->fan_running;
+      const bool fan_is_running = settings->fan == FanMode::ON;
       if (fan_is_running) {
         const uint32_t subtract_seconds = clock_->secondsSince(last_maintain_time_) / (settings->persisted.fan_on_duty / 100.0);
         cycle_seconds -= subtract_seconds;
@@ -68,7 +68,7 @@ class FanController {
       }
 
       // Store the new setting.
-      settings->fan_running = fan_enable;
+      settings->fan = fan_enable ? FanMode::ON : FanMode::OFF;
     }
   private:
     // Ensures the fan meets the fan running duty cycle. Each time the fan runs, the fan will continue running until cycle_seconds returns to zero.

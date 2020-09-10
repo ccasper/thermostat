@@ -43,7 +43,7 @@ class SensorStub : public Sensor {
 
 class ClockStub : public Clock {
  public:
-  uint32_t Millis() override { return millis_; };
+  uint32_t Millis() const override { return millis_; };
   void Increment(uint32_t millis) { millis_ += millis; }
   void SetMillis(uint32_t millis) { millis_ = millis; };
   void SetDate(const Date &date) { date_ = date; }

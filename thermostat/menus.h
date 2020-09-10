@@ -252,7 +252,7 @@ class Menus {
           case 0:
             display_->SetCursor(0, 1);
             display_->print("On ratio: ");
-            display_->print(OnPercent(*settings_, clock_->Millis()));
+            display_->print(OnPercent(*settings_, *clock_));
             button = wait_for_button_press_(10000);
             break;
           case 1:
@@ -276,7 +276,7 @@ class Menus {
           case 4:
             display_->SetCursor(0, 1);
             display_->print("Heat T/m: ");
-            display_->print(GetHeatTempPerMin(*settings_, clock_->Millis()));
+            display_->print(GetHeatTempPerMin(*settings_, *clock_));
             button = wait_for_button_press_(10000);
             break;
           case 5:
