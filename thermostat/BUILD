@@ -7,9 +7,8 @@ cc_library(
           "buttons.h",
           "print.h",
           "events.h",
-          "maintain_hvac.h",
           "calculate_iaq.h",
-          "fan_controller.h",
+          "thermostat_tasks.h",
           "menus.h"
   ],
 	copts = ["-Ithermostat", "-I../testing"],

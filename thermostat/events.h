@@ -7,61 +7,22 @@
 
 namespace thermostat {
 
-static HvacMode SanitizeHvacMode(const HvacMode mode) {
+constexpr float kTenMinuteAdjustmentMins = 9.5;
+constexpr uint32_t kEventHorizon = Clock::DaysToMillis(1);
+
+static HvacMode Sanitize(const HvacMode mode) {
   if (mode == HvacMode::HEAT || mode == HvacMode::COOL) {
     return mode;
   }
   return HvacMode::IDLE;
 }
 
-static void AddOrUpdateEvent(const Clock& clock, Settings* const settings) {
-  const uint32_t now = clock.Millis();
-
-  // Clear any events that are over a month old.
-  for (uint8_t i = 0; i < EVENT_SIZE; ++i) {
-    if (settings->events[i].empty()) {
-      continue;
-    }
-    if (Clock::millisDiff(settings->events[i].start_time, now) > Clock::DaysToMillis(30)) {
-      settings->events[i].set_empty();
-    }
+static FanMode Sanitize(const FanMode mode) {
+  if (mode == FanMode::ON) {
+    return mode;
   }
-
-  // Check to see if the last settings match the current window.
-  bool make_new_event = false;
-
-  if (settings->event_index == 255) {
-    make_new_event = true;
-  }
-
-  Event* const event = &settings->events[settings->event_index];
-  const HvacMode hvac = SanitizeHvacMode(settings->GetHvacMode());
-  if (hvac != event->hvac) {
-    make_new_event = true;
-  }
-
-  // Update the 10 minute temperature when heating more than 10 minutes.
-  if (hvac == HvacMode::HEAT) {
-    if (Clock::millisDiff(event->start_time, now) > Clock::MinutesToMillis(10)) {
-      event->temperature_10min_x10 = settings->current_mean_temperature_x10;
-    }
-  }
-
-  if (settings->GetFanMode() != event->fan) {
-    make_new_event = true;
-  }
-
-  if (make_new_event) {
-    settings->event_index = (settings->event_index + 1) % EVENT_SIZE;
-    Event* new_event = &settings->events[settings->event_index];
-    new_event->start_time = now;
-
-    new_event->temperature_x10 = settings->current_mean_temperature_x10;
-    new_event->hvac = settings->GetHvacMode();
-    new_event->fan = settings->GetFanMode();
-  }
+  return FanMode::OFF;
 }
-
 
 static float GetHeatTempPerMin(const Settings& settings, const Clock& clock) {
   const uint32_t now = clock.Millis();
@@ -76,14 +37,16 @@ static float GetHeatTempPerMin(const Settings& settings, const Clock& clock) {
       continue;
     }
 
-    if (Clock::millisDiff(event->start_time, now) > Clock::DaysToMillis(2)) {
+    if (Clock::MillisDiff(event->start_time, now) > kEventHorizon) {
       continue;
     }
 
     if (event->hvac != HvacMode::HEAT) {
       continue;
     }
-
+    if (event->temperature_10min_x10 == 0) {
+      continue;
+    }
     count++;
     sum += (event->temperature_10min_x10 - event->temperature_x10);
   }
@@ -94,14 +57,15 @@ static float GetHeatTempPerMin(const Settings& settings, const Clock& clock) {
   // if ~ 2*/min set to 25%
   // if ~ 3*/min set to 35%
 
-  return static_cast<float>(sum) / /*x10*/ 10.0 / count / 9.5 /*mins (30 seconds? for heater warmup)*/;
+  return static_cast<float>(sum) / /*x10*/ 10.0 / count /
+         kTenMinuteAdjustmentMins /*mins (30 seconds? for heater warmup)*/;
 }
 
 // Returns Zero when empty, otherwise the length of time for the event.
-static uint32_t GetEventDuration(const uint8_t index, const Settings& settings, const Clock& clock) {
-  const uint32_t now = clock.Millis();
-  // If the event is empty, we don't have a duration.
+static uint32_t GetEventDuration(const uint8_t index, const Settings& settings,
+                                 const uint32_t now) {
 
+  // If the event is empty, we don't have a duration.
   if (index >= EVENT_SIZE) {
     return 0;
   }
@@ -113,14 +77,14 @@ static uint32_t GetEventDuration(const uint8_t index, const Settings& settings, 
   const uint8_t next_index = (index + 1) % EVENT_SIZE;
   // When we don't have an event after this, then we use the current time.
   if (settings.events[next_index].empty()) {
-    return Clock::secondsDiff(settings.events[index].start_time, now);
+    return Clock::MillisDiff(settings.events[index].start_time, now);
   }
-  return Clock::MillisToSeconds(Clock::millisDiff(settings.events[index].start_time,
-                                settings.events[next_index].start_time));
+  return Clock::MillisDiff(settings.events[index].start_time,
+                           settings.events[next_index].start_time);
 }
 
 //// Returns true if found and value passed back in diff parameter.
-//static bool GetEventTempDiff(const uint8_t index, const Settings& settings,
+// static bool GetEventTempDiff(const uint8_t index, const Settings& settings,
 //                      const uint32_t now, int* temperature_diff_x10) {
 //  // If the event is empty, we don't have a duration.
 //  if (settings.events[index].empty) {
@@ -129,28 +93,26 @@ static uint32_t GetEventDuration(const uint8_t index, const Settings& settings, 
 //
 //  // When we don't have an event after this, then we use the current time.
 //  if (settings.events[(index + 1) % EVENT_SIZE].empty) {
-//    return Clock::millisDiff(settings.events[index].start_time, now);
+//    return Clock::MillisDiff(settings.events[index].start_time, now);
 //  }
-//  return Clock::millisDiff(settings.events[index].start_time,
+//  return Clock::MillisDiff(settings.events[index].start_time,
 //                    settings.events[(index + 1) % EVENT_SIZE].start_time);
 //}
 
 // This checks if we should be in a 5 minute lockout when switching from cooling to
 // heating or heating to cooling.
-static bool IsInLockoutMode(const HvacMode mode, const Event* events,
-                            const uint8_t events_size, const Clock& clock) {
-  const uint32_t now = clock.Millis();
+static bool IsInLockoutMode(const HvacMode mode, const Event* events, const uint32_t now) {
   constexpr uint32_t kLockoutMs = 5UL * 60UL * 1000UL;
   uint8_t index = 0;
   uint32_t millis_since = 0xFFFFFFFF;  // some big number
 
   // Find the newest event.
-  for (int i = 0; i < events_size; ++i) {
+  for (int i = 0; i < EVENT_SIZE; ++i) {
     if (events[i].empty()) {
       continue;
     }
-    if (Clock::millisDiff(events[i].start_time, now) < millis_since) {
-      millis_since = Clock::millisDiff(events[i].start_time, now);
+    if (Clock::MillisDiff(events[i].start_time, now) < millis_since) {
+      millis_since = Clock::MillisDiff(events[i].start_time, now);
       index = i;
     }
   }
@@ -165,16 +127,18 @@ static bool IsInLockoutMode(const HvacMode mode, const Event* events,
   }
 
   // Are we actively heating or cooling?
-  if (mode == HvacMode::COOL && millis_since < kLockoutMs && events[index].hvac == HvacMode::HEAT) {
+  if (mode == HvacMode::COOL && millis_since < kLockoutMs &&
+      events[index].hvac == HvacMode::HEAT) {
     return true;
   }
-  if (mode == HvacMode::HEAT && millis_since < kLockoutMs && events[index].hvac == HvacMode::COOL) {
+  if (mode == HvacMode::HEAT && millis_since < kLockoutMs &&
+      events[index].hvac == HvacMode::COOL) {
     return true;
   }
 
   // Keep looking back until we're beyond the window..
   while (true) {
-    index = (index - 1) % events_size;
+    index = (index - 1) % EVENT_SIZE;
     // The previous event is empty.
     if (events[index].empty()) {
       return false;
@@ -190,7 +154,7 @@ static bool IsInLockoutMode(const HvacMode mode, const Event* events,
     }
 
     // use the start time for the next previous event as it's stop time.
-    millis_since = Clock::millisDiff(events[index].start_time, now);
+    millis_since = Clock::MillisDiff(events[index].start_time, now);
 
     if (millis_since > kLockoutMs) {
       return false;
@@ -200,123 +164,159 @@ static bool IsInLockoutMode(const HvacMode mode, const Event* events,
   return false;
 }
 
+static uint32_t OldestEventStart(const Settings& settings, const Clock& clock) {
+  // Loop through all the stored events.
+  const uint32_t now = clock.Millis();
 
-static uint32_t CalculateSeconds(bool running, const Settings& settings, uint8_t* events, const Clock& clock);
+  uint32_t oldest_start_time;
+  uint32_t oldest_diff = 0;
+  for (int idx = 0; idx < EVENT_SIZE; ++idx) {
+    // Account for wrap around by using MillisDiff.
+    if (Clock::MillisDiff(settings.events[idx].start_time, now) > oldest_diff) {
+      oldest_start_time = settings.events[idx].start_time;
+    }
+  }
+  return oldest_start_time;
+}
 
-static float OnPercent(const Settings& settings, const Clock& clock) {
-  const int current_index = settings.CurrentEventIndex();
-  if (current_index == -1) {
-    return 0;
+static uint32_t CalculateDurationSinceTime(const uint32_t history_start, const uint32_t event_start, const uint32_t duration) {
+  const uint32_t event_end = event_start + duration;
+
+  // Do we need to clip to the amount during the history window.
+  //
+  // We clip when the event straddle the history start point.
+  if (MillisSubtract(event_end, history_start) >= 0 &&
+      MillisSubtract(event_start, history_start) < 0) {
+    return event_end - history_start;
   }
-  uint8_t event_count_noop;
-  const uint32_t on_seconds = CalculateSeconds(true, settings, &event_count_noop, clock);
-  const uint32_t off_seconds = CalculateSeconds(false, settings, &event_count_noop, clock);
-  if (off_seconds == 0 && on_seconds == 0) {
-    return 0;
-  }
-  return static_cast<float>(on_seconds) / (on_seconds + off_seconds);
+  return duration;
 }
 
 // Returns how long the system has been either running or not running.
-static uint32_t CalculateSeconds(const bool running, const Settings& settings,
-                                 uint8_t* const events, const Clock& clock) {
+static uint32_t CalculateSeconds(const FanMode fan, const Settings& settings,
+                                 const uint32_t history_window_ms, const Clock& clock) {
   uint32_t total_seconds = 0;
-  uint32_t total_events = 0;
+  const uint32_t now = clock.Millis();
 
   // Loop through all the stored events.
   for (int idx = 0; idx < EVENT_SIZE; ++idx) {
-    const uint32_t duration = GetEventDuration(idx, settings, clock);
+    const uint32_t duration_ms = CalculateDurationSinceTime(
+                                   now - history_window_ms,
+                                   settings.events[idx].start_time,
+                                   GetEventDuration(idx, settings, now));
+    //
+    //    LOG(INFO) << "idx:" << idx
+    //              << " start: " << settings.events[idx].start_time / 60 / 1000
+    //              << " duration:" << duration_ms / 60 / 1000
+    //              << " fan:" << ((settings.events[idx].fan == FanMode::ON) ? "ON" : "OFF");
 
-    // Only sum events that valid and have a duration.
-    if (duration == 0) {
+    // Only sum events that have a duration.
+    if (duration_ms == 0) {
       continue;
     }
-
-    const bool is_running = settings.events[idx].hvac == HvacMode::HEAT || settings.events[idx].hvac == HvacMode::COOL;
 
     // Only sum events that match the desired running state.
-    if (running != is_running) {
+    if (settings.events[idx].fan != fan) {
       continue;
     }
 
-    total_seconds += duration / 1000;
-    ++total_events;
+    //LOG(INFO) << "Total:" << total_seconds / 60 << " Summing " << duration_ms / 1000 / 60 << " for fan:" << (settings.events[idx].fan == FanMode::ON);
+    total_seconds += duration_ms / 1000;
   }
 
-  *events = total_events;
   return total_seconds;
 };
 
-//static float TempDeltaPerMinute(const bool running, const Settings& settings, const uint32_t now) {
-//  const int current_index = settings.CurrentEventIndex();
-//  if (current_index == -1) {
-//    return 0;
-//  }
-//
-//  const int oldest_index = OldestIndex(settings, now);
-//  if (oldest_index == -1) {
-//    return 0;
-//  }
-//
-//  int32_t total_seconds = 0;
-//  int32_t total_events = 0;
-//  double total_temperature_diff = 0;
-//
-//  int index = current_index;
-//  while (true) {
-//    // Skip the current index, but use it's start time as the end time for the previous.
-//    const uint32_t end_ms = settings.events[index].start_time;
-//    const int end_temp = settings.events[index].temperature_x10;
-//
-//    // Stop if we have reached the oldest index.
-//    if (index == oldest_index) {
-//      break;
-//    }
-//
-//    // Since we check for oldest entry, we shouldn't reach an empty entry.
-//    index = index - 1;
-//
-//    const uint32_t start_ms = settings.events[index].start_time;
-//    const int start_temp = settings.events[index].temperature_x10;
-//
-//    const int32_t length_sec = Clock::millisDiff(start_ms, end_ms) / 1000;
-//    const double temperature_diff = (end_temp - start_temp) / 10.0;
-//
-//    if (running && settings.events[index].heat && settings.events[index].cool) {
-//      total_seconds += length_sec;
-//      total_temperature_diff += temperature_diff;
-//      ++total_events;
-//    }
-//    if (!running && (settings.events[index].heat || settings.events[index].cool)) {
-//      total_seconds += length_sec;
-//      ++total_events;
-//    }
-//  }
-//
-//  if (total_events > 0) {
-//    return total_temperature_diff / (total_seconds / 60.0);
-//  }
-//
-//  return 0x0;
-//}
+// Returns how long the system has been either running or not running.
+static uint32_t CalculateSeconds(const HvacMode hvac, const Settings& settings,
+                                 const uint32_t history_window_ms, const Clock& clock) {
+  uint32_t total_seconds = 0;
+  const uint32_t now = clock.Millis();
 
-//static int OldestIndex(const Settings& settings, const uint32_t now) {
-//  int index = -1;
-//  uint32_t index_ms = 0;
-//  for (int i = 0; i < EVENT_SIZE; ++i) {
-//    if (settings.events[i].empty) {
-//      continue;
-//    }
-//
-//    const uint32_t ms = Clock::millisDiff(settings.events[i].start_time, now);
-//
-//    if (index == -1 || ms > index_ms) {
-//      index = i;
-//      index_ms = ms;
-//    }
-//  }
-//  return index;
-//}
+  // Loop through all the stored events.
+  for (int idx = 0; idx < EVENT_SIZE; ++idx) {
+    uint32_t duration_ms = GetEventDuration(idx, settings, now);
 
+    // Clip to the amount during the history window.
+    //
+    // TODO: Fix the millis wrap around issue if this is used for more
+    // than simple user output.
+    if (now - history_window_ms < settings.events[idx].start_time + duration_ms &&
+        now - history_window_ms >= settings.events[idx].start_time) {
+      duration_ms =
+        (settings.events[idx].start_time + duration_ms) - (now - history_window_ms);
+    }
+
+    // Only sum events that valid and have a duration.
+    if (duration_ms == 0) {
+      continue;
+    }
+
+    // Only sum events that match the desired running state.
+    if (settings.events[idx].hvac != hvac) {
+      continue;
+    }
+
+    total_seconds += duration_ms / 1000;
+  }
+
+  return total_seconds;
+};
+static uint32_t HeatRise(const Settings& settings, const Clock& clock) {
+  uint32_t now = clock.Millis();
+  // Iterate backward for the latest two heat events or up to 12 hours.
+  uint8_t heatrate_count = 0;
+  int32_t heatrate = 0;
+  uint8_t last_idx = (settings.event_index - 1) % EVENT_SIZE;
+  for (uint8_t idx = settings.event_index; idx != last_idx; --idx) { 
+    if (settings.events[idx].empty()) {
+      break;
+    }
+    if (Clock::MillisDiff(settings.events[idx].start_time, now) >
+        Clock::DaysToMillis(24)) {
+      break;
+    }
+
+    if (settings.events[idx].hvac == HvacMode::HEAT &&
+        settings.events[idx].temperature_10min_x10 != 0) {
+      const int16_t rate = settings.events[idx].temperature_10min_x10 - settings.events[idx].temperature_x10;
+      if (rate > 0) {
+        heatrate += rate;
+        ++heatrate_count;
+      }
+    }
+
+    if (heatrate_count >= 2) {
+      break;
+    }
+    
+    idx = (idx - 1) % EVENT_SIZE;
+  }
+
+  return heatrate/heatrate_count;  
 }
-#endif // EVENTS_H_
+static int16_t OutdoorTemperatureEstimate(const Settings& settings, const Clock& clock) {
+  const uint32_t oldest_start_time = cmin(OldestEventStart(settings, clock), Clock::HoursToMillis(24));
+  const uint32_t heat_seconds = CalculateSeconds(HvacMode::HEAT, settings, Clock::HoursToMillis(24), clock);
+  const float heat_ratio = heat_seconds / Clock::MillisToSeconds(oldest_start_time);
+
+  // Focus on 20F to -20F since this is where humidity control needs to change.
+  if (heat_ratio < 20) {
+    return 200;  // 20F
+    // Set humidity to 40%
+  }
+  if (heat_ratio < 25) {
+    return 100;  // 10F
+  }
+  if (heat_ratio < 32) {
+    return 000;  // 0F
+  }
+  if (heat_ratio < 40) {
+    return -100;  // -10F
+  } else {
+    return -200;  // -20F
+  }
+}
+
+}  // namespace thermostat
+#endif  // EVENTS_H_

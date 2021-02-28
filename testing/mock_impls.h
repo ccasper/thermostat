@@ -1,6 +1,7 @@
 #ifndef MOCK_IMPLS_H_
 #define MOCK_IMPLS_H_
 #include <gtest/gtest.h>
+#include "gmock/gmock.h"  // Brings in gMock.
 
 #include "settings.h"
 #include "thermostat/interfaces.h"
@@ -66,6 +67,12 @@ class RelaysStub : public Relays {
 
  private:
   RelayState relay_[static_cast<int>(RelayType::kMax)];
+};
+
+
+class MockThermostatTask : public ThermostatTask {
+ public:
+  MOCK_METHOD(Status, RunOnce, (Settings* settings), (override));
 };
 
 // Abstract interface for Serial/Debug output.

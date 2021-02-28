@@ -76,10 +76,10 @@ class Buttons {
       }
 
       // Return a button press at 40Hz it's held after 5 seconds.
-      const uint32_t fourth_counts = Clock::millisDiff(started_at_ms, now) / 250;
+      const uint32_t fourth_counts = Clock::MillisDiff(started_at_ms, now) / 250;
       // Auto press at a 25ms rate after holding for 5 seconds.
       if (fourth_counts >= 4 /*counts per second*/ * 5) {
-        const uint32_t fortieth_counts = Clock::millisDiff(started_at_ms, now) / 25;
+        const uint32_t fortieth_counts = Clock::MillisDiff(started_at_ms, now) / 25;
         if (fortieth_counts > held_counter) {
           held_counter = fortieth_counts;
           return active;

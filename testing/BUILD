@@ -21,8 +21,8 @@ cc_test(
 )
 
 cc_test(
-    name = "maintain_hvac_test",
-    srcs = ["maintain_hvac_test.cc"],
+    name = "hvac_controller_thermostat_task_test",
+    srcs = ["hvac_controller_thermostat_task_test.cc"],
     deps = [
 		    "@gtest//:gtest",
 		    "@gtest//:gtest_main",
@@ -93,8 +93,8 @@ cc_test(
 )
 
 cc_test(
-    name = "fan_controller_test",
-    srcs = ["fan_controller_test.cc"],
+    name = "fan_controller_thermostat_task_test",
+    srcs = ["fan_controller_thermostat_task_test.cc"],
     deps = [
                     "@gtest//:gtest",
                     "@gtest//:gtest_main",

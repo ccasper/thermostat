@@ -14,6 +14,100 @@
 
 namespace thermostat {
 
+#ifdef DEV_BOARD
+class CannedSensor : public Sensor {
+  public:
+    CannedSensor(Print *print) : print_(print) {};
+    void SetUp() {};
+    void StartRequestAsync() override {};
+    float GetTemperature() override {
+      if (temp_ > 85.0 || temp_ < 60.0) {
+        temp_ = 60.0;
+      }
+      temp_ += .1;
+      return temp_;
+    };
+    float GetHumidity() override {
+      return temp_;
+    }
+  private:
+    float temp_;
+    Print *print_;
+};
+
+class CannedDisplay : public Display {
+  public:
+    CannedDisplay(Print *print) : print_(print) {
+      for (uint8_t r = 0; r < 2; ++r) {
+        for (uint8_t c = 0; c < 16; ++c) {
+          bytes_[r][c] = ' ';
+        }
+      }
+      // Mark end of string.
+      bytes_[0][16] = '\0';
+      bytes_[1][16] = '\0';
+    };
+    void SetUp() {};
+
+    void write(uint8_t ch) override {
+      if (col_pos_ >= 16) {
+        return;
+      }
+      bytes_[row_pos_][col_pos_] = ch;
+      ++col_pos_;
+    };
+
+    void SetCursor(const int col, const int row) override {
+      //    LOG(INFO) << "SetCursor: c:" << col << " r:" << row;
+      row_pos_ = row;
+      col_pos_ = col;
+      if (row == col == 0) {
+        char str[18];
+      }
+    }
+    uint8_t GetChar(const uint8_t row, const uint8_t col) {
+      return bytes_[row][col];
+    };
+
+    void Printer() {
+      char str[17];
+      print_->print("\n================\n");
+      GetString(str, 0, 0, 16);
+      print_->print(str);
+      print_->write('\n');
+
+      GetString(str, 1, 0, 16);
+      print_->print(str);
+      print_->write('\n');
+
+    }
+    char *GetString(char *str, const uint8_t row, const uint8_t col, const uint8_t length) {
+      for (int i = 0; i < length; ++i) {
+        str[i] = GetChar(row, col + i);
+        if (str[i] == '\0') {
+          str[i] = '\247';  // '°'
+        }
+        if (str[i] == '\1') {
+          str[i] = '\134';  // '\'
+        }
+      }
+      str[length] = '\0';
+      return str;
+    };
+
+  private:
+
+    // Row + Column written.
+    uint8_t bytes_[2][17];
+
+    // Where the next character should be written.
+    uint8_t row_pos_;
+    uint8_t col_pos_;
+
+    Print *print_;
+};
+
+#endif
 
 class DallasSensor : public Sensor {
   public:
@@ -55,7 +149,7 @@ constexpr int rs = 8, en = 9, d4 = 4, d5 = 5, d6 = 6, d7 = 7;
 
 class Lcd : public Display {
   public:
-    void Setup() {
+    void SetUp() {
 
       // set up the LCD's number of columns and rows:
       lcd_.begin(16, 2);
@@ -82,7 +176,7 @@ class Lcd : public Display {
     };
 
   private:
-    // Setup the LCD.
+    // Set up the LCD.
     LiquidCrystal lcd_ = LiquidCrystal(rs, en, d4, d5, d6, d7);
 
     // Create a custom degree '°' symbol for the 1602 Serial LCD display.
@@ -114,7 +208,7 @@ class BmeSensor : public Sensor {
   public:
     BmeSensor(Print *print) : print_(print) {};
 
-    void Setup() {
+    void SetUp() override {
       if (!bme_.begin()) {
         print_->print("Could not find a valid BME680 sensor, check wiring!\r\n");
         while (1)
@@ -175,17 +269,32 @@ class RealClock : public Clock {
       return millis();
     };
 
+    static Date SanitizeDate(Date date) {
+      if (date.hour >= 24) {
+        date.hour = 0;
+      }
+      if (date.minute >= 60) {
+        date.minute = 0;
+      }
+      if (date.day_of_week >= 7) {
+        date.day_of_week = 0;
+      }
+      return date;
+    }
+    
     Date Now() override {
       rtc_.refresh();
       Date date;
       date.hour = rtc_.hour();
       date.minute = rtc_.minute();
       date.day_of_week = rtc_.dayOfWeek();
-      return date;
+
+      return SanitizeDate(date);
     }
 
     void Set(const Date& date) override {
-      rtc_.set(/*seconds=*/0, date.minute, date.hour, date.day_of_week, /*dayOfMonth=*/1,
+      const Date new_date = SanitizeDate(date);
+      rtc_.set(/*seconds=*/0, new_date.minute, new_date.hour, new_date.day_of_week, /*dayOfMonth=*/1,
                            /*month=*/1, /*year*/ 20);
     }
 
@@ -196,7 +305,7 @@ class RealClock : public Clock {
 
 class SsdRelays: public Relays {
   public:
-    void Setup() {
+    void SetUp() {
       digitalWrite(SSR1_PIN, OFF);  // Relay (1)
       digitalWrite(SSR2_PIN, OFF);  // Relay (2)
       digitalWrite(SSR4_PIN, OFF);  // Relay (4)
@@ -228,7 +337,7 @@ class SsdRelays: public Relays {
           }
           digitalWrite(SSR3_PIN, state);
           break;
-        case RelayType::kHumidifier:
+        case RelayType::kHeatHigh:
           if (state == digitalRead(SSR4_PIN)) {
             return;
           }
@@ -261,8 +370,8 @@ class SsdRelays: public Relays {
 // Abstract interface for Serial/Debug output.
 class Output : public Print {
   public:
-    virtual void Setup() {
-      ::Serial.begin(9600);
+    virtual void SetUp() {
+      ::Serial.begin(38400);
     }
     // Note: Arduinos Print uses a return size_t, but we need
     // this to be consistent.

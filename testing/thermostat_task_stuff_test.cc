@@ -7,9 +7,8 @@
 
 #include "mock_impls.h"
 #include "thermostat/comparison.h"
-#include "thermostat/fan_controller.h"
 #include "thermostat/interfaces.h"
-#include "thermostat/maintain_hvac.h"
+#include "thermostat/thermostat_tasks.h"
 #include "thermostat/settings.h"
 
 namespace thermostat {
@@ -54,13 +53,15 @@ class MaintainHvacTest : public testing::Test {
 
   ClockStub clock;
 
-  FanController fan{&clock};
-
   PrintStub print;
   DisplayStub display;
   RelaysStub relays;
   SensorStub bme_sensor;
   SensorStub dallas_sensor;
+
+  WrapperThermostatTask wrapper;
+  HvacControllerThermostatTask task(&clock, &print, &wrapper);
+
 };
 
 TEST_F(MaintainHvacTest, MaintainHvacDelayed) {
@@ -76,15 +77,15 @@ TEST_F(MaintainHvacTest, MaintainHvacDelayed) {
   EXPECT_EQ(error, Error::STATUS_NONE);
 
   // Increment slightly less than than 2.5 seconds.
-  clock.Increment(2400);
+  clock.Increment(1000);
 
   // Rerunning too soon.
   error = MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
                        &dallas_sensor, &print);
   EXPECT_EQ(error, Error::STATUS_NONE);
 
-  // Increment slightly more than than 2.5 seconds.
-  clock.Increment(200);
+  // Increment slightly more than than the iteration in seconds.
+  clock.Increment(2000);
 
   // Rerunning too soon.
   error = MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
@@ -93,9 +94,68 @@ TEST_F(MaintainHvacTest, MaintainHvacDelayed) {
 }
 
 TEST_F(MaintainHvacTest, HeatEnabled) {
+  settings.persisted.heat_enabled = true;
+  settings.persisted.cool_enabled = false;
+
   EXPECT_EQ(MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
                          &dallas_sensor, &print),
             Error::STATUS_OK);
+
+  // Increment slightly more than 2.5 seconds.
+  clock.Increment(3000);
+
+  // We should run through the full HVAC code.
+  EXPECT_EQ(MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
+                         &dallas_sensor, &print),
+            Error::STATUS_OK);
+
+  // Verify the display output.
+  char string[17];
+  EXPECT_STREQ(display.GetString(string, 0, 0, 4), "70.1");
+  EXPECT_EQ(display.GetChar(0, 4), '\0');  // Degree symbol.
+  EXPECT_STREQ(display.GetString(string, 0, 5, 11), " 50.0%  __ ");
+
+  // Increment slightly more than 2.5 seconds.
+  clock.Increment(3000);
+
+  // Set the setpoint temperature higher.
+  settings.persisted.heat_setpoints[0].temperature_x10 = 800;
+  settings.persisted.heat_setpoints[1].temperature_x10 = 800;
+
+  // Run the next cycle.
+  EXPECT_EQ(MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
+                         &dallas_sensor, &print),
+            Error::STATUS_OK);
+
+  // Verify that heat was enabled.
+  EXPECT_EQ(display.GetChar(0, kHvacField), 'H');
+  EXPECT_EQ(settings.hvac, HvacMode::HEAT);
+
+  // Increment slightly more than 2.5 seconds.
+  clock.Increment(3000);
+
+  // Set the setpoint temperature lower.
+  settings.persisted.heat_setpoints[0].temperature_x10 = 600;
+  settings.persisted.heat_setpoints[1].temperature_x10 = 600;
+
+  // Run the next cycle.
+  EXPECT_EQ(MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
+                         &dallas_sensor, &print),
+            Error::STATUS_OK);
+
+  // Verify that heat was disabled.
+  EXPECT_EQ(settings.hvac, HvacMode::IDLE);
+  EXPECT_EQ(display.GetChar(0, kHvacField), '_');
+}
+
+TEST_F(MaintainHvacTest, HeatAndCoolEnabled) {
+  settings.persisted.heat_enabled = true;
+  settings.persisted.cool_enabled = true;
+  
+  EXPECT_EQ(MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
+                         &dallas_sensor, &print),
+            Error::STATUS_OK);
+            
 
   // Increment slightly more than 2.5 seconds.
   clock.Increment(3000);
@@ -260,7 +320,9 @@ TEST_F(MaintainHvacTest, HeatThenCool) {
   // Prime the async requests.
   settings.persisted.cool_enabled = false;
   settings.persisted.heat_enabled = false;
-  
+  dallas_sensor.SetTemperature(70.11);
+  settings.hvac = HvacMode::IDLE;
+
   EXPECT_EQ(MaintainHvac(&settings, &clock, &display, &relays, &fan, &bme_sensor,
                          &dallas_sensor, &print),
             Error::STATUS_OK);
@@ -296,10 +358,9 @@ TEST_F(MaintainHvacTest, HeatThenCool) {
   clock.Increment(4 * 60 * 1000);  // 4 minutes off.
 
   // Check the events queue.
-  uint8_t events;
-  EXPECT_EQ(CalculateSeconds(true, settings, &events, clock), 3);
-  EXPECT_EQ(CalculateSeconds(false, settings, &events, clock), 3 + 4 * 60);
-  EXPECT_EQ(events, 2);
+  EXPECT_EQ(CalculateSeconds(HvacMode::HEAT, settings, Clock::HoursToMillis(24),clock), 3);
+  EXPECT_EQ(CalculateSeconds(HvacMode::IDLE, settings, Clock::HoursToMillis(24),clock), 3 + 4 * 60);
+  EXPECT_EQ(settings.event_index, 3);
 
   // Verify that cool is in lockout.
   EXPECT_EQ(display.GetChar(0, kHvacField), 'c');
@@ -326,10 +387,11 @@ TEST_F(MaintainHvacTest, HeatThenCool) {
   EXPECT_EQ(settings.hvac, HvacMode::COOL);
 
   // Check seconds running in the events queue.
-  EXPECT_EQ(events, 2);
-  EXPECT_EQ(CalculateSeconds(true, settings, &events, clock), 3 + 6);
+  EXPECT_EQ(settings.event_index, 5);
+  EXPECT_EQ(CalculateSeconds(HvacMode::HEAT, settings, Clock::HoursToMillis(24),clock), 3);
+  EXPECT_EQ(CalculateSeconds(HvacMode::COOL, settings, Clock::HoursToMillis(24),clock), 6);
   // Check seconds not running in the events queue.
-  EXPECT_EQ(CalculateSeconds(false, settings, &events, clock), 6 * 60 + 3);
+  EXPECT_EQ(CalculateSeconds(HvacMode::IDLE, settings, Clock::HoursToMillis(24),clock), 6 * 60 + 3);
 }
 
 TEST_F(MaintainHvacTest, TemperatureStability) {

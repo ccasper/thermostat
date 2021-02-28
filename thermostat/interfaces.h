@@ -10,6 +10,27 @@
 // This allows unit testing to use mock like interfaces to test much of the logic.
 namespace thermostat {
 
+// Forward declare settings.
+class Settings;
+
+enum class Status {kOk, kSkipped,
+                   kBmeSensorFail,
+                   kHeatAndCool,
+                   kMenuDisplayArg, kError
+                  };
+
+class ThermostatTask {
+  public:
+    // This method is always run periodically, even when blocking in menus. This ensures the
+    // HVAC controls are continuously maintained.
+    //
+    // This updates the HVAC, relays, top LCD row and fan actions. This needs to be
+    // performed once every ~1-5 seconds.
+    //
+    // For example, when we call into a menu, the menu blocks, and since the menu always
+    virtual Status RunOnce(Settings* settings) = 0;
+};
+
 enum class Error {
   STATUS_NONE,
   STATUS_OK,
@@ -33,17 +54,17 @@ class Clock {
 
     // Calculate the millis since the previous time accounting for wrap around.
     uint32_t millisSince(const uint32_t previous) {
-      return millisDiff(previous, Millis());
+      return MillisDiff(previous, Millis());
     }
 
     // Calculate the millis since the previous time accounting for wrap around.
     uint32_t secondsSince(const uint32_t previous) {
-      return millisDiff(previous, Millis()) / 1000 /*ms/sec*/;
+      return MillisDiff(previous, Millis()) / 1000 /*ms/sec*/;
     }
 
     // Calculate the millis since the previous time accounting for wrap around.
     uint32_t minutesSince(const uint32_t previous) {
-      return millisDiff(previous, Millis()) / 1000 /*ms/sec*/ / 60 /*sec/min*/;
+      return MillisDiff(previous, Millis()) / 1000 /*ms/sec*/ / 60 /*sec/min*/;
     }
     // Calculate the millis since the previous time accounting for wrap around.
     uint32_t hoursSince(const uint32_t previous) {
@@ -54,25 +75,33 @@ class Clock {
       return minutesSince(previous) / 60 /*mins/hour*/ / 24 /*hours/day*/;
     }
 
+    static constexpr uint32_t HoursToSeconds(const uint32_t hours) {
+      return hours * 60 * 60;
+    }
+
+    static constexpr uint32_t MinutesToSeconds(const uint32_t minutes) {
+      return minutes * 60;
+    }
+
     // Calculate the millis since the previous time accounting for wrap around.
     static constexpr uint32_t daysDiff(const uint32_t previous, const uint32_t next) {
       // Millis rolls over after about 50 days, the unsigned subtraction accounts for this.
-      return Clock::MillisToDays(Clock::millisDiff(previous, next));
+      return Clock::MillisToDays(Clock::MillisDiff(previous, next));
     }
 
     // Calculate the millis since the previous time accounting for wrap around.
     static constexpr uint32_t MinutesDiff(const uint32_t previous, const uint32_t next) {
       // Millis rolls over after about 50 days, the unsigned subtraction accounts for this.
-      return Clock::MillisToMinutes(Clock::millisDiff(previous, next));
+      return Clock::MillisToMinutes(Clock::MillisDiff(previous, next));
     }
     // Calculate the millis since the previous time accounting for wrap around.
-    static constexpr uint32_t secondsDiff(const uint32_t previous, const uint32_t next) {
+    static constexpr uint32_t SecondsDiff(const uint32_t previous, const uint32_t next) {
       // Millis rolls over after about 50 days, the unsigned subtraction accounts for this.
-      return Clock::millisDiff(previous, next) / 1000;
+      return Clock::MillisDiff(previous, next) / 1000;
     }
 
     // Calculate the millis since the previous time accounting for wrap around.
-    static constexpr uint32_t millisDiff(const uint32_t previous, const uint32_t next) {
+    static constexpr uint32_t MillisDiff(const uint32_t previous, const uint32_t next) {
       // Millis rolls over after about 50 days, the unsigned subtraction accounts for this.
       return next - previous;
     }
@@ -106,6 +135,26 @@ class Clock {
     }
 };
 
+// Subtract time a from time b. If a is more recent than b, the
+// result is positive.
+//
+// This assumes the difference between 'a' and 'b' is not more than
+// half of the max millis value that causes wrap around.
+static int32_t MillisSubtract(uint32_t a, uint32_t b) {
+  // if a - b are more than half the max wrap value, then we
+  // normalize them from the wrap around.
+  const uint32_t half_wrap = static_cast<uint32_t>(-1) / 2;
+  if (a - b > half_wrap) {
+    // If a wrapped around and is a smaller value.
+    //
+    // This is an optimization instead of normalizing both a and b
+    // by adding UINT32_MAX/2 and then doing the subtraction.
+    return (b - a) * -1;
+  }
+  return a - b;
+}
+
+
 class Display : public Print {
   public:
     virtual void SetCursor(const int column, const int row) {
@@ -116,6 +165,8 @@ class Display : public Print {
 
 class Sensor {
   public:
+    virtual void SetUp() {};
+    
     // Most sensors implement this.
     virtual void StartRequestAsync() = 0;
 
@@ -146,7 +197,6 @@ class Sensor {
     };
 };
 
-class Settings;
 
 class SettingsStorer {
   public:
@@ -155,7 +205,7 @@ class SettingsStorer {
 };
 
 enum class RelayType {
-  kHeat, kCool, kFan, kHumidifier, kMax
+  kHeat, kCool, kFan, kHeatHigh, kMax
 };
 
 enum class RelayState {

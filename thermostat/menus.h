@@ -30,50 +30,18 @@ using WaitForButtonPressFn = Button (*)(uint32_t timeout);
 using SettingFn = Button (*)();
 using GetDateFn = Date (*)();
 
+// Set changed, and update the EEPROM.
 static void SetChangedAndPersist(Settings *settings, SettingsStorer *writer) {
   settings->changed = true;
   writer->Write(*settings);
 };
 
+// Set changed, but don't update the EEPROM.
 static void SetChanged(Settings* settings) {
   settings->changed = true;
 };
 
-static Settings GetEepromOrDefaultSettings(SettingsStorer* storer) {
-  // Read the settings from EEPROM.
-  Settings settings;
-  storer->Read(&settings);
-
-  // If it don't look right, use the defaults.
-  if (settings.persisted.version != VERSION) {
-    Settings defaults;
-    defaults.persisted.version = VERSION;
-    // 7am-9pm -> 70.0° ; 9pm-7am -> 69°
-    defaults.persisted.heat_setpoints[0].hour = 7;
-    defaults.persisted.heat_setpoints[0].temperature_x10 = 700;
-    defaults.persisted.heat_setpoints[1].hour = 21;
-    defaults.persisted.heat_setpoints[1].temperature_x10 = 690;
-
-    // 7am-9pm -> 77.0° ; 9pm-7am -> 72°
-    defaults.persisted.cool_setpoints[0].hour = 7;
-    defaults.persisted.cool_setpoints[0].temperature_x10 = 770;
-    defaults.persisted.cool_setpoints[1].hour = 21;
-    defaults.persisted.cool_setpoints[1].temperature_x10 = 720;
-
-    // With a 1.1° tolerance.
-    //
-    // If the setpoint is 70°, heat stops at 70° and heating restarts at 68.9°, or cooling
-    // restarts at 71.1°.
-    defaults.persisted.tolerance_x10 = 11;
-
-    // Write them to the eeprom.
-    SetChangedAndPersist(&defaults, storer);
-
-    return defaults;
-  }
-  return settings;
-};
-
+// Helper for handling flashing behavior of a field.
 class Flasher {
   public:
     Flasher(Clock* clock) : clock_(clock) {};
@@ -119,6 +87,12 @@ class Flasher {
 class Digit {
   public:
     Digit(uint16_t value, uint16_t min, uint16_t max, const bool x10, const char *unit, Display *display, Flasher *flasher) : value_(value), min_(min), max_(max), x10_(x10), unit_(unit), display_(display), flasher_(flasher) {
+      if (value_ < min_) { 
+        value_ = min_;
+      }
+      if (value > max_) {
+        value_ = max_;
+      }
     };
     uint16_t Value() {
       return value_;
@@ -148,7 +122,6 @@ class Digit {
         return;
       }
       value_ = value;
-
     };
 
     void Print(bool selected) {
@@ -243,47 +216,146 @@ class Menus {
 
     void ShowStatuses() {
       uint8_t menu_index = 0;
-      constexpr uint8_t MENU_MAX = 6;
+      constexpr uint8_t MENU_MAX = 9;
 
       while (true) {
         ResetLine();
         Button button;
+        display_->SetCursor(0, 1);
         switch (menu_index) {
           case 0:
-            display_->SetCursor(0, 1);
-            display_->print("On ratio: ");
-            display_->print(OnPercent(*settings_, *clock_));
+            //1234567890123456
+            //H:00 C:00 F:00 %
+            {
+              display_->print("H:");
+              const uint32_t window = cmin(OldestEventStart(*settings_, *clock_), Clock::HoursToMillis(24));
+              const uint32_t heat = CalculateSeconds(HvacMode::HEAT, *settings_, window, *clock_);
+              const int ratio = cmin(heat * 100 / Clock::MillisToSeconds(window), 99UL);
+              if (ratio < 10) {
+                display_->write('0');
+              }
+              display_->print(ratio);
+            }
+            {
+              display_->print(" C:");
+              const uint32_t window = cmin(OldestEventStart(*settings_, *clock_), Clock::HoursToMillis(24));
+              const uint32_t cool = CalculateSeconds(HvacMode::COOL, *settings_, window, *clock_);
+              const int ratio = cmin(cool * 100 / Clock::MillisToSeconds(window), 99UL);
+              if (ratio < 10) {
+                display_->write('0');
+              }
+              display_->print(ratio);
+            }
+            {
+              display_->print(" F:");
+              const uint32_t window = cmin(OldestEventStart(*settings_, *clock_), Clock::HoursToMillis(24));
+              const uint32_t fan = CalculateSeconds(FanMode::ON, *settings_, window, *clock_);
+              const int ratio = cmin(fan * 100 / Clock::MillisToSeconds(window), 99UL);
+              if (ratio < 10) {
+                display_->write('0');
+              }
+              display_->print(ratio);
+            }
+            display_->print('%');
+
             button = wait_for_button_press_(10000);
+            if (button == Button::UP) {
+              // 1234567890123456
+              // c st:XXXXXm SF
+              //   c = 'A' + index
+              //   XXXXXX = millis/1000/60
+              //   S = H/C/I
+              //   F = F/I
+              // c du:XXXXXm SF
+              const uint32_t now = clock_->Millis();
+
+              // Loop through all the stored events.
+              for (int idx = 0; idx < EVENT_SIZE; ++idx) {
+                const uint32_t duration_ms = CalculateDurationSinceTime(
+                                               now - Clock::HoursToMillis(24),
+                                               settings_->events[idx].start_time,
+                                               GetEventDuration(idx, *settings_, now));
+
+                // Only sum events that valid and have a duration.
+                if (duration_ms == 0) {
+                  continue;
+                }
+
+                ResetLine();
+                display_->SetCursor(0, 1);
+                display_->write('A' + idx);
+                display_->print(" st:");
+                display_->print(settings_->events[idx].start_time / 1000 / 60);
+                display_->print("m ");
+                display_->print(settings_->events[idx].fan == FanMode::ON ? "F" : "I");
+                display_->print(settings_->events[idx].hvac == HvacMode::COOL ? "C" : settings_->events[idx].hvac == HvacMode::HEAT ? "H" : "I");
+                wait_for_button_press_(1000);
+                ResetLine();
+                display_->SetCursor(0, 1);
+                display_->write('A' + idx);
+                display_->print(" du:");
+                display_->print(duration_ms / 1000 / 60);
+                display_->print("m ");
+                display_->print(settings_->events[idx].fan == FanMode::ON ? "F" : "I");
+                display_->print(settings_->events[idx].hvac == HvacMode::COOL ? "C" : settings_->events[idx].hvac == HvacMode::HEAT ? "H" : "I");
+                wait_for_button_press_(1000);
+              }
+            }
             break;
           case 1:
-            display_->SetCursor(0, 1);
             display_->print("BME Temp: ");
             display_->print(settings_->current_bme_temperature_x10);
             button = wait_for_button_press_(10000);
             break;
           case 2:
-            display_->SetCursor(0, 1);
             display_->print("Dal Temp: ");
             display_->print(settings_->current_temperature_x10);
             button = wait_for_button_press_(10000);
             break;
           case 3:
-            display_->SetCursor(0, 1);
             display_->print("IAQ: ");
             display_->print(settings_->air_quality_score);
             button = wait_for_button_press_(10000);
             break;
           case 4:
-            display_->SetCursor(0, 1);
             display_->print("Heat T/m: ");
+
             display_->print(GetHeatTempPerMin(*settings_, *clock_));
             button = wait_for_button_press_(10000);
             break;
           case 5:
-            display_->SetCursor(0, 1);
-            display_->print("Status 5: ");
-            button = wait_for_button_press_(10000);
-            break;
+            {
+              display_->print("H s: ");
+              const uint32_t heat = CalculateSeconds(HvacMode::HEAT, *settings_, Clock::HoursToMillis(24), *clock_);
+              display_->print(heat);
+              button = wait_for_button_press_(10000);
+              break;
+            }
+          case 6:
+            {
+              display_->print("F s.: ");
+              const uint32_t fan = CalculateSeconds(FanMode::ON, *settings_, Clock::HoursToMillis(24), *clock_);
+
+              display_->print(fan);
+              button = wait_for_button_press_(10000);
+              break;
+            }
+          case 8:
+            {
+              display_->print("Heat Rise: ");
+
+              display_->print(HeatRise(*settings_, *clock_));
+              button = wait_for_button_press_(10000);
+              break;
+            }
+          case 7:
+            {
+              display_->print("Out T: ");
+
+              display_->print(OutdoorTemperatureEstimate(*settings_, *clock_));
+              button = wait_for_button_press_(10000);
+              break;
+            }
         }
 
         ResetLine();
@@ -305,39 +377,36 @@ class Menus {
       ResetLine();
 
       uint8_t menu_index = 0;
-      constexpr uint8_t kMenuMax = 11;
+      constexpr uint8_t kMenuMax = 9;
 
       while (true) {
         Button button;
         switch (menu_index) {
           case 0:
-            button = SetHumidifierLevel();
-            break;
-          case 1:
             button = SetFan();
             break;
-          case 2:
+          case 1:
             button = SetMode();
             break;
+          case 2:
+            button = SetSetpoint(0, HvacMode::HEAT);
+            break;
           case 3:
-            button = SetSetpointNew(0, HvacMode::HEAT);
+            button = SetSetpoint(1, HvacMode::HEAT);
             break;
           case 4:
-            button = SetSetpointNew(1, HvacMode::HEAT);
+            button = SetSetpoint(0, HvacMode::COOL);
             break;
           case 5:
-            button = SetSetpointNew(0, HvacMode::COOL);
+            button = SetSetpoint(1, HvacMode::COOL);
             break;
           case 6:
-            button = SetSetpointNew(1, HvacMode::COOL);
-            break;
-          case 8:
             button = SetTolerance();
             break;
-          case 9:
+          case 7:
             button = SetDate();
             break;
-          case 10:
+          case 8:
             button = SetFanCycle();
             break;
           case kMenuMax:
@@ -427,50 +496,46 @@ class Menus {
       const bool initial_fan_setting = settings_->persisted.fan_always_on;
       bool fan = settings_->persisted.fan_always_on;
 
+      Flasher flasher(clock_);
+      Waiter waiter(&wait_for_button_press_);
+      Digit mins = Digit(settings_->persisted.fan_extend_mins, 1, 999, false, "m", display_, &flasher);
+
+      // Determine the initial state.
+      uint8_t fan_state = 0; // 0=OFF, 1=ON, 2=EXT
+      if (fan) {
+        fan_state = 0;
+      } else if (settings_->persisted.fan_extend_mins == 0) {
+        fan_state = 1;
+      } else {
+        fan_state = 2;
+      }
+      constexpr uint8_t kTotalFanStates = 3;
+
       uint8_t field = 0;
       constexpr uint8_t kTotalFields = 2;
-      uint16_t fan_extend_mins = settings_->persisted.fan_extend_mins;
-
-      uint32_t flash_ms = clock_->Millis();
-      bool flash_state = false;
-
-      int timeout_counter = 0;
 
       // Setup the display
-      // "Fan: EXT:060m"
-      // "Fan: ON     "
+      // "Fan:ON     "
+      // "Fan:OFF    "
+      // "Fan:EXT:060m"
       ResetLine();
-      display_->print("Fan: ");
+      display_->print("Fan:");
       auto update = [&]() {
-        display_->SetCursor(5, 1);
-        if (clock_->millisSince(flash_ms) > 500) {
-          flash_state = !flash_state;
-          flash_ms = clock_->Millis();
-        }
-
+        display_->SetCursor(4, 1);
         // Print the Fan On/Off status.
-        if (field == 0 && flash_state == true) {
+        if (field == 0 && flasher.State()) {
           display_->print("___ ");
         } else {
-          display_->print(fan ? "ON  " : "EXT:");
+          display_->print(fan_state == 0 ? "ON  " : fan_state == 1 ? "OFF " : "EXT:");
         }
 
         // Print the extended fan time.
         //
-        // When the fan is always on, hide the extended minutes.
-        if (fan == true) {
-          display_->print("    ");
-        } else if (field == 1 && flash_state == true) {
-          display_->print("___m");
+        // When the fan is in ext mode, show the extend minutes.
+        if (fan_state == 2) {
+          mins.Print(field == 1);
         } else {
-          if (fan_extend_mins < 100) {
-            display_->print("0");
-          }
-          if (fan_extend_mins < 10) {
-            display_->print("0");
-          }
-          display_->print(fan_extend_mins);
-          display_->print("m");
+          display_->print("    ");
         }
       };
       // First see if the user wants to change this item.
@@ -481,60 +546,67 @@ class Menus {
       }
 
       while (true) {
-        // Only after 10 seconds of timeouts do we pass the timeout button.
-        Button button = wait_for_button_press_(500);
-        if (button == Button::TIMEOUT) {
-          timeout_counter++;
-          if (timeout_counter < 20) {
-            // Stay in the menu for now.
-            button = Button::NONE;
-          }
-        } else {
-          timeout_counter = 0;
-        }
+        Button button = waiter.Wait();
 
-        // Exit when we get a left arrow in the edit menu.
         int increment = 1;
         switch (button) {
           case Button::DOWN:
-            if (field == 0) {
-              fan = false;
-              // Also change the fan temporarily. This makes it easer to change the fan
-              // speed.
-              settings_->persisted.fan_always_on = fan;
-              settings_->persisted.fan_extend_mins = fan_extend_mins;
-              SetChanged(settings_);
-              break;
-            }
-            if (field == 1) {
-              increment = -1;
-            }
+            increment = -1;
           /* FALLTHRU */
           case Button::UP:
             if (field == 0) {
-              fan = true;
+              if (fan_state == 0 && increment < 0) {
+                fan_state = kTotalFanStates - 1;
+              } else {
+                fan_state = (fan_state + increment) % kTotalFanStates;
+              }
 
               // Change the fan temporarily. This makes it easer to perform special fan
               // speed changes.
-              settings_->persisted.fan_always_on = fan;
-              settings_->persisted.fan_extend_mins = fan_extend_mins;
+              switch (fan_state) {
+                // Fan On.
+                case 0:
+                  settings_->persisted.fan_always_on = true;
+                  break;
+                // Fan Off.
+                case 1:
+                  settings_->persisted.fan_always_on = false;
+                  settings_->persisted.fan_extend_mins = 0;
+                  break;
+                // Fan Off with extend.
+                case 2:
+                  settings_->persisted.fan_always_on = false;
+                  settings_->persisted.fan_extend_mins = mins.Value();
+                  break;
+              }
               SetChanged(settings_);
             }
-            if (field == 1) {
-              fan_extend_mins += increment;
-            }
+            mins.Increment(field == 1, increment);
             break;
           case Button::RIGHT:
-            // Only allow changing the extended fan time if the fan setting is set to auto
-            // (false).
-            if ((field == 0 && fan == false) || (field == 1)) {
+            // Allow changing the field if extended fan time is selected or already editing the fan time.
+            if ((field == 0 && fan_state == 2) || (field == 1)) {
               field = (field + 1) % kTotalFields;
             }
             break;
           case Button::SELECT:
             // Update the settings data.
-            settings_->persisted.fan_always_on = fan;
-            settings_->persisted.fan_extend_mins = fan_extend_mins;
+            switch (fan_state) {
+              // Fan On.
+              case 0:
+                settings_->persisted.fan_always_on = true;
+                break;
+              // Fan Off.
+              case 1:
+                settings_->persisted.fan_always_on = false;
+                settings_->persisted.fan_extend_mins = 0;
+                break;
+              // Fan Off with extend.
+              case 2:
+                settings_->persisted.fan_always_on = false;
+                settings_->persisted.fan_extend_mins = mins.Value();
+                break;
+            }
             SetChangedAndPersist(settings_, storer_);
 
             PrintUpdatedAndWait();
@@ -555,48 +627,55 @@ class Menus {
     }
 
     Button SetMode() {
-      uint8_t mode =
-        settings_->persisted.heat_enabled << 1 | settings_->persisted.cool_enabled;
+
+      Flasher flasher(clock_);
+      Waiter waiter(&wait_for_button_press_);
+      Digit mode = Digit(
+                          settings_->persisted.heat_enabled << 1 | settings_->persisted.cool_enabled,
+                          0, 3, false, "", display_, &flasher);
 
       // Setup the display
       ResetLine();
       display_->print("Mode: ");
-
       // Draw the value.
       auto update = [&]() {
         display_->SetCursor(5, 1);
-        display_->print(mode == 3 ? "BOTH" : mode == 2 ? "HEAT" : mode == 1 ? "COOL" : "OFF ");
+        if (flasher.State()) {
+          display_->print("____");
+          return;
+        }
+        display_->print(mode.Value() == 3 ? "BOTH" : mode.Value() == 2 ? "HEAT" : mode.Value() == 1 ? "COOL" : "OFF ");
       };
+
+      // First see if the user wants to change this item.
       update();
+      Button button = WaitBeforeEdit();
+      if (button != Button::SELECT) {
+        return button;
+      }
 
       while (true) {
-        const Button button = wait_for_button_press_(10000);
+        Button button = waiter.Wait();
 
         // Exit when we get a left arrow in the edit menu.
+        int increment = 1;
         switch (button) {
           case Button::DOWN:
-            if (mode == 0) {
-              mode = 3;
-              break;
-            };
-            --mode;
-            break;
+            increment = -1;
           case Button::UP:
-            if (mode == 3) {
-              mode = 0;
-              break;
-            }
-            ++mode;
-
+            mode.Increment(true, increment);
             break;
           case Button::SELECT:
             // Update the settings data.
-            settings_->persisted.heat_enabled = mode & 0x02 ? true : false;
-            settings_->persisted.cool_enabled = mode & 0x01 ? true : false;
+            settings_->persisted.heat_enabled = mode.Value() & 0x02 ? true : false;
+            settings_->persisted.cool_enabled = mode.Value() & 0x01 ? true : false;
             SetChangedAndPersist(settings_, storer_);
 
             PrintUpdatedAndWait();
             return Button::NONE;
+            break;
+          case Button::NONE:
+            // Do nothing.
             break;
           default:
             return button;
@@ -605,139 +684,31 @@ class Menus {
       }
     }
 
-    //    Button SetDateNew() {
-    //      constexpr uint8_t kMaxFields = 3;
-    //      uint8_t field = 0;
-    //      // 1234567890123456
-    //      // H1: XX.X° XX:XX
-    //      Date date = clock_->Now();
-    //
-    //      Flasher flasher(clock_);
-    //      Waiter waiter(&wait_for_button_press_);
-    //      Digit hrs = Digit(date.hour, 0, 23, false, ":", display_, &flasher);
-    //      Digit mins = Digit(date.minute, 0, 99, false, "", display_, &flasher);
-    //
-    //      ResetLine();
-    //      display_->print((mode == HvacMode::HEAT) ? "H" : "C");
-    //      display_->print(setpoint + 1);
-    //      display_->print(":");
-    //      auto update = [&]() {
-    //        display_->SetCursor(3, 1);
-    //        temp.Print(field == 1);
-    //
-    //        // Print custom degree symbol.
-    //        display_->write(uint8_t(0));
-    //
-    //        display_->write(' ');
-    //        hrs.Print(field == 2);
-    //        //display_->print(":");
-    //        mins.Print(field==3);
-    //      };
-    //
-    //      // First see if the user wants to change this item.
-    //      update();
-    //      Button button = WaitBeforeEdit();
-    //      if (button != Button::SELECT) {
-    //        return button;
-    //      }
-    //      // Start at field 1 if edit chosen.
-    //      field = 1;
-    //      flasher.Underline();
-    //
-    //      while (true) {
-    //        // Update the display.
-    //        update();
-    //
-    //        Button button = waiter.Wait();
-    //
-    //        // Exit when we get a left arrow in the edit menu.
-    //        int increment = 1;
-    //        switch (button) {
-    //          case Button::LEFT:
-    //            // Left is the exit button.
-    //            return button;
-    //          case Button::RIGHT:
-    //            ++field;
-    //            if (field > kMaxFields) { field = 1; }
-    //            flasher.Underline();
-    //            break;
-    //          case Button::DOWN:
-    //            // Use the same logic as Button::UP, except that the value will be decremented
-    //            // instead of incremented.
-    //            increment = -1;
-    //          // Fall through.
-    //          case Button::UP:
-    //            temp.Increment(field == 1, increment);
-    //            hrs.Increment(field == 2, increment);
-    //            mins.Increment(field == 3, increment);
-    //            break;
-    //          case Button::SELECT:
-    //            if (mode == HvacMode::HEAT) {
-    //              settings_->persisted.heat_setpoints[setpoint].temperature_x10 =
-    //                temp.Value();
-    //              settings_->persisted.heat_setpoints[setpoint].hour = hrs.Value();
-    //              settings_->persisted.heat_setpoints[setpoint].minute = mins.Value();
-    //            } else {
-    //              settings_->persisted.cool_setpoints[setpoint].temperature_x10 =
-    //                temp.Value();
-    //              settings_->persisted.cool_setpoints[setpoint].hour = hrs.Value();
-    //              settings_->persisted.cool_setpoints[setpoint].minute = mins.Value();
-    //            }
-    //            // Update the settings data.
-    //            SetChangedAndPersist(settings_, storer_);
-    //            PrintUpdatedAndWait();
-    //            return Button::NONE;
-    //            break;
-    //          case Button::NONE:
-    //            // Do nothing, this is likely due to a timeout override.
-    //            break;
-    //          default:
-    //            return button;
-    //        }
-    //      }
-    //    }
-
     Button SetDate() {
       uint8_t field = 0;
+
+      Flasher flasher(clock_);
+      Waiter waiter(&wait_for_button_press_);
+
       Date date = clock_->Now();
-      uint32_t flash_ms = clock_->Millis();
-      bool flash_state = false;
+      Digit hrs = Digit(date.hour, 0, 23, false, ":", display_, &flasher);
+      Digit mins = Digit(date.minute, 0, 59, false, "", display_, &flasher);
+      Digit dow = Digit(date.day_of_week, 0, 6, false, "", display_, &flasher);
 
       ResetLine();
       display_->print("Date: ");
       auto update = [&]() {
         display_->SetCursor(6, 1);
-        if (clock_->millisSince(flash_ms) > 500) {
-          flash_state = !flash_state;
-          flash_ms = clock_->Millis();
-        }
-
         // 00:00 Mo
-        if (field == 0 && flash_state == true) {
-          display_->print("__");
-        } else {
-          if (date.hour < 10) {
-            display_->print("0");
-          }
-          display_->print(static_cast<uint16_t>(date.hour));
-        }
+        hrs.Print(field == 0);
+        mins.Print(field == 1);
 
-        display_->print(":");
-
-        if (field == 1 && flash_state == true) {
-          display_->print("__");
-        } else {
-          if (date.minute < 10) {
-            display_->print("0");
-          }
-          display_->print(static_cast<uint16_t>(date.minute));
-        }
         display_->write(' ');
 
-        if (field == 2 && flash_state == true) {
+        if (field == 2 && flasher.State()) {
           display_->print("__");
         } else {
-          display_->print(daysOfTheWeek[date.day_of_week]);
+          display_->print(daysOfTheWeek[dow.Value()]);
         }
       };
 
@@ -748,19 +719,8 @@ class Menus {
         return button;
       }
 
-      int timeout_counter = 0;
-
       while (true) {
-        // Only after 10 seconds of timeouts do we pass the timeout button.
-        Button button = wait_for_button_press_(500);
-        if (button == Button::TIMEOUT) {
-          timeout_counter++;
-          if (timeout_counter < 20) {
-            button = Button::NONE;
-          }
-        } else {
-          timeout_counter = 0;
-        }
+        Button button = waiter.Wait();
 
         // Exit when we get a left arrow in the edit menu.
         int increment = 1;
@@ -770,31 +730,22 @@ class Menus {
             return button;
           case Button::RIGHT:
             field = (field + 1) % 3;
+            flasher.Underline();
             break;
           case Button::DOWN:
             increment = -1;
           // Fall through.
           case Button::UP:
             // Stop flashing while updating.
-            flash_state = false;
-            flash_ms = clock_->Millis();
-
-            switch (field) {
-              case 0:
-                date.hour += increment;
-                break;
-              case 1:
-                date.minute += increment;
-                break;
-              case 2:
-                date.day_of_week += increment;
-                break;
-              default:
-                break;
-            }
+            hrs.Increment(field == 0, increment);
+            mins.Increment(field == 1, increment);
+            dow.Increment(field == 2, increment);
             break;
           case Button::SELECT:
             // Update the settings data.
+            date.day_of_week = dow.Value();
+            date.minute = mins.Value();
+            date.hour = hrs.Value();
             clock_->Set(date);
             SetChangedAndPersist(settings_, storer_);
             PrintUpdatedAndWait();
@@ -814,160 +765,6 @@ class Menus {
     Button SetSetpoint(const uint8_t setpoint, const HvacMode mode) {
       constexpr uint8_t kMaxFields = 3;
       uint8_t field = 0;
-
-      // Copy the current settings for editing.
-      int temperature_x10 =
-        (mode == HvacMode::HEAT)
-        ? settings_->persisted.heat_setpoints[setpoint].temperature_x10
-        : settings_->persisted.cool_setpoints[setpoint].temperature_x10;
-      ;
-      int hour = (mode == HvacMode::HEAT) ? settings_->persisted.heat_setpoints[setpoint].hour
-                 : settings_->persisted.cool_setpoints[setpoint].hour;
-      int minute = (mode == HvacMode::HEAT)
-                   ? settings_->persisted.heat_setpoints[setpoint].minute
-                   : settings_->persisted.cool_setpoints[setpoint].minute;
-
-      // Flash state.
-      uint32_t flash_ms = clock_->Millis();
-      bool flash_state = false;
-
-      ResetLine();
-      display_->print((mode == HvacMode::HEAT) ? "H" : "C");
-      auto update = [&]() {
-        display_->SetCursor(1, 1);
-        display_->print(setpoint + 1);
-        display_->print(":");
-
-        if (clock_->millisSince(flash_ms) > 500) {
-          flash_state = !flash_state;
-          flash_ms = clock_->Millis();
-        }
-
-        // 00.0^ 00:00
-        if (field == 0 && flash_state == true) {
-          display_->print("__");
-        } else {
-          if (temperature_x10 / 10 < 10) {
-            display_->write('0');
-          }
-          display_->print(temperature_x10 / 10);
-        }
-
-        display_->write('.');
-
-        if (field == 0 && flash_state == true) {
-          display_->print("_");
-        } else {
-          display_->print(temperature_x10 % 10);
-        }
-        // Print custom degree symbol.
-        display_->write(uint8_t(0));
-
-        display_->write(' ');
-        if (field == 1 && flash_state == true) {
-          display_->print("__");
-        } else {
-          if (hour < 10) {
-            display_->print("0");
-          }
-          display_->print(hour);
-        }
-        display_->print(":");
-        if (field == 2 && flash_state == true) {
-          display_->print("__");
-        } else {
-          if (minute < 10) {
-            display_->print("0");
-          }
-          display_->print(minute);
-        }
-      };
-
-      // First see if the user wants to change this item.
-      update();
-      Button button = WaitBeforeEdit();
-      if (button != Button::SELECT) {
-        return button;
-      }
-
-      int timeout_counter = 0;
-
-      while (true) {
-        // Only after 10 seconds of timeouts do we pass the timeout button.
-        Button button = wait_for_button_press_(500);
-        if (button == Button::TIMEOUT) {
-          timeout_counter++;
-          if (timeout_counter < 20) {
-            button = Button::NONE;
-          }
-        } else {
-          timeout_counter = 0;
-        }
-
-        // Exit when we get a left arrow in the edit menu.
-        int increment = 1;
-        switch (button) {
-          case Button::LEFT:
-            // Left is the exit button.
-            return button;
-          case Button::RIGHT:
-            field = (field + 1) % kMaxFields;
-            break;
-          case Button::DOWN:
-            // Use the same logic as Button::UP, except that the value will be decremented
-            // instead of incremented.
-            increment = -1;
-          // Fall through.
-          case Button::UP:
-            // Stop flashing while updating.
-            flash_state = false;
-            flash_ms = clock_->Millis();
-
-            switch (field) {
-              case 0:
-                temperature_x10 += increment;
-                break;
-              case 1:
-                hour += increment;
-                break;
-              case 2:
-                minute += increment;
-                break;
-              default:
-                break;
-            }
-            break;
-          case Button::SELECT:
-            if (mode == HvacMode::HEAT) {
-              settings_->persisted.heat_setpoints[setpoint].temperature_x10 =
-                temperature_x10;
-              settings_->persisted.heat_setpoints[setpoint].hour = hour;
-              settings_->persisted.heat_setpoints[setpoint].minute = minute;
-            } else {
-              settings_->persisted.cool_setpoints[setpoint].temperature_x10 =
-                temperature_x10;
-              settings_->persisted.cool_setpoints[setpoint].hour = hour;
-              settings_->persisted.cool_setpoints[setpoint].minute = minute;
-            }
-            // Update the settings data.
-            SetChangedAndPersist(settings_, storer_);
-            PrintUpdatedAndWait();
-            return Button::NONE;
-            break;
-          case Button::NONE:
-            // Do nothing, this is likely due to a timeout override.
-            break;
-          default:
-            return button;
-        }
-        // Update the display.
-        update();
-      }
-    }
-
-    Button SetSetpointNew(const uint8_t setpoint, const HvacMode mode) {
-      constexpr uint8_t kMaxFields = 3;
-      uint8_t field = 0;
       // 1234567890123456
       // H1: XX.X° XX:XX
       Flasher flasher(clock_);
@@ -979,7 +776,7 @@ class Menus {
                         : settings_->persisted.cool_setpoints[setpoint].hour, 0, 23, false, ":", display_, &flasher);
       Digit mins = Digit((mode == HvacMode::HEAT)
                          ? settings_->persisted.heat_setpoints[setpoint].minute
-                         : settings_->persisted.cool_setpoints[setpoint].minute, 0, 99, false, "", display_, &flasher);
+                         : settings_->persisted.cool_setpoints[setpoint].minute, 0, 59, false, "", display_, &flasher);
 
       ResetLine();
       display_->print((mode == HvacMode::HEAT) ? "H" : "C");
@@ -1065,133 +862,29 @@ class Menus {
 
 
     Button SetTolerance() {
-      int val = settings_->persisted.tolerance_x10;
-      uint32_t flash_ms = clock_->Millis();
-      bool flash_state = false;
+      Flasher flasher(clock_);
+      Waiter waiter(&wait_for_button_press_);
+      Digit val = Digit(settings_->persisted.tolerance_x10, 1, 99, true, "", display_, &flasher);
 
       ResetLine();
       display_->print("Tolerance: ");
       // Updates the display for the changed fields.
       auto update = [&]() {
         display_->SetCursor(11, 1);
-
-        if (clock_->millisSince(flash_ms) > 500) {
-          flash_state = !flash_state;
-          flash_ms = clock_->Millis();
-        }
-
-        // Tolerance: 00.0^
-        if (flash_state == true) {
-          display_->print("__._");
-        } else {
-          if (val / 10 < 10) {
-            display_->print("0");
-          }
-          display_->print(val / 10);
-          display_->print(".");
-          display_->print(val % 10);
-        }
+        val.Print(true);
         // Print custom degree symbol.
         display_->write(0);
       };
 
+      // First see if the user wants to change this item.
       update();
-
-      int timeout_counter = 0;
-
-      while (true) {
-        // Only after 10 seconds of timeouts do we pass the timeout button.
-        Button button = wait_for_button_press_(500);
-        if (button == Button::TIMEOUT) {
-          timeout_counter++;
-          if (timeout_counter < 20) {
-            button = Button::NONE;
-          }
-        } else {
-          timeout_counter = 0;
-        }
-
-        // Exit when we get a left arrow in the edit menu.
-        int increment = 1;
-        switch (button) {
-          case Button::LEFT:
-            // Left is the exit button.
-            return button;
-          case Button::RIGHT:
-            return button;
-            break;
-          case Button::DOWN:
-            increment = -1;
-          // Fall through.
-          case Button::UP:
-            // Stop flashing while updating.
-            flash_state = false;
-            flash_ms = clock_->Millis();
-
-            val += increment;
-            break;
-          case Button::SELECT:
-            // Update the settings data.
-            settings_->persisted.tolerance_x10 = val;
-            SetChangedAndPersist(settings_, storer_);
-            PrintUpdatedAndWait();
-            return Button::NONE;
-            break;
-          case Button::NONE:
-            // Do nothing, this is likely due to a timeout override.
-            break;
-          default:
-            return button;
-        }
-        // Update the display.
-        update();
+      Button button = WaitBeforeEdit();
+      if (button != Button::SELECT) {
+        return button;
       }
-    }
-
-    Button SetHumidifierLevel() {
-      int val = settings_->persisted.humidity;
-      uint32_t flash_ms = clock_->Millis();
-      bool flash_state = false;
-
-      ResetLine();
-      display_->print("Humidify: ");
-      // Updates the display for the changed fields.
-      auto update = [&]() {
-        display_->SetCursor(10, 1);
-
-        if (clock_->millisSince(flash_ms) > 500) {
-          flash_state = !flash_state;
-          flash_ms = clock_->Millis();
-        }
-
-        // Tolerance: 00%
-        if (flash_state == true) {
-          display_->print("__");
-        } else {
-          if (val < 10) {
-            display_->print("0");
-          }
-          display_->print(val);
-        }
-        // Print custom degree symbol.
-        display_->write('%');
-      };
-
-      update();
-
-      int timeout_counter = 0;
 
       while (true) {
-        // Only after 10 seconds of timeouts do we pass the timeout button.
-        Button button = wait_for_button_press_(500);
-        if (button == Button::TIMEOUT) {
-          timeout_counter++;
-          if (timeout_counter < 20) {
-            button = Button::NONE;
-          }
-        } else {
-          timeout_counter = 0;
-        }
+       Button button = waiter.Wait();
 
         // Exit when we get a left arrow in the edit menu.
         int increment = 1;
@@ -1206,24 +899,11 @@ class Menus {
             increment = -1;
           // Fall through.
           case Button::UP:
-            // Stop flashing while updating.
-            flash_state = false;
-            flash_ms = clock_->Millis();
-
-            // Limit the value to a max of 50%.
-            if (val >= 50 && increment > 0) {
-              break;
-            }
-
-            // Limit the value to a max of 50%.
-            if (val <= 0 && increment < 0) {
-              break;
-            }
-            val += increment;
+            val.Increment(true, increment);
             break;
           case Button::SELECT:
             // Update the settings data.
-            settings_->persisted.humidity = val;
+            settings_->persisted.tolerance_x10 = val.Value();
             SetChangedAndPersist(settings_, storer_);
             PrintUpdatedAndWait();
             return Button::NONE;
@@ -1272,32 +952,62 @@ class Menus {
     //
     // This is called when the user presses Up/Down on the main informational status page.
     Button EditOverrideTemp() {
-      while (true) {
-        display_->SetCursor(0, 1);
-        display_->print("Override: ");
-        // print the number of seconds since reset:
-        display_->SetCursor(10, 1);
-        int temp = GetOverrideTemp(*settings_);
-        display_->print(static_cast<int>(temp) / 10);
-        display_->print(".");
-        display_->print(static_cast<int>(temp) % 10);
-        display_->write(0);
-        display_->write(' ');
+      // If override is already set, clear it and return.
+      if (IsOverrideTempActive(*settings_)) {
+        ClearOverrideTemp(settings_);
+        ResetLine();
+        display_->print("Override cleared");
+        wait_for_button_press_(1000);
+        return Button::NONE;
+      }
+      Flasher flasher(clock_);
+      Waiter waiter(&wait_for_button_press_);
+      Digit temp = Digit(GetOverrideTemp(*settings_), 400, 999, true, "", display_, &flasher);
 
-        const Button button = wait_for_button_press_(10000);
+      ResetLine();
+      display_->print("Override: ");
+      // Updates the display for the changed fields.
+      auto update = [&]() {
+        display_->SetCursor(10, 1);
+        temp.Print(true);
+        // Print custom degree symbol.
+        display_->write(0);
+      };
+
+      while (true) {
+       update();
+       Button button = waiter.Wait();
+
+        // Exit when we get a left arrow in the edit menu.
+        int increment = 1;
         switch (button) {
-          case Button::UP:
-            SetOverrideTemp(1, settings_, clock_->Millis());
-            continue;
-          case Button::DOWN:
-            SetOverrideTemp(-1, settings_, clock_->Millis());
-            continue;
-          default:
+          case Button::LEFT:
+            // Left is the exit button.
+            return button;
+          case Button::RIGHT:
+            return button;
             break;
+          case Button::DOWN:
+            increment = -1;
+          // Fall through.
+          case Button::UP:
+            temp.Increment(true, increment);
+            break;
+          case Button::SELECT:
+            // Update the settings data.
+            SetOverrideTemp(temp.Value(), settings_, clock_->Millis());
+            PrintUpdatedAndWait();
+            return Button::NONE;
+            break;
+          case Button::NONE:
+            // An update for flashing behavior occurred.
+            break;
+          default:
+            return button;
         }
-        return button;
       }
     }
+
 
   private:
     // Helper to reset the menu managed second row.
