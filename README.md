@@ -3,6 +3,8 @@ Arduino Home thermostat control with heat, cool, fan, and humidity controls
 
 This is in active use in my Wisconsin house with a Bryant 95s gas furnace with Lennox A/C and Honeywell Humidifier. Any furnace, humidifier, or air conditioning make/model should work with this thermostat. It was a drop in replacement for my standard thermostat.
 
+![Thermostat Hardware](https://github.com/ccasper/thermostat/blob/master/screenshots/unenclosed.jpg?raw=true)
+
 ![Thermostat LCD](https://github.com/ccasper/thermostat/blob/master/screenshots/display_lcd.jpg?raw=true)
 
 # Programming:
