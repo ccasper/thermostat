@@ -6,7 +6,7 @@
 // Set this if we're using an Arduino Mega with the LCD Keypad Shield only.
 // ========================================================================
 // ========================================================================
-//#define DEV_BOARD 1
+#define DEV_BOARD 1
 // ========================================================================
 // ========================================================================
 
@@ -101,11 +101,13 @@ SsdRelays g_relays = SsdRelays();
 
 // Create the sensors
 #ifdef DEV_BOARD
-  CannedSensor g_dallas_sensor = CannedSensor(&g_print);
-  // Create the temperature/humidity/gas quality sensor.
+  Dht22Sensor g_dallas_sensor = Dht22Sensor(&g_print);
+//  CannedSensor g_dallas_sensor = CannedSensor(&g_print);
   CannedSensor g_bme_sensor = CannedSensor(&g_print);
 #else
+  // Create the temperature sensor.
   DallasSensor g_dallas_sensor = DallasSensor(&g_print);
+  // Create the temperature/humidity/gas quality sensor.
   BmeSensor g_bme_sensor = BmeSensor(&g_print);
 #endif
 
@@ -114,6 +116,10 @@ RealClock g_clock;
 
 // Create the LCD display output.
 Lcd g_lcd;
+
+Status GetSystemStatus() {
+  return g_status;
+}
 
 // Wire up the thermostat decorators. Each layer does one specific task which has significant advantages:
 // Pros:
@@ -134,12 +140,12 @@ Lcd g_lcd;
 //
 // Normally shared_ptr/unique_ptr objects would be used, however for embedded AVR, avoiding malloc/new saves resources. Therefore global
 // objects for static memory usage accounting is used.
-WrapperThermostatTask wrapper_thermostat_task; // This is only for convenience, and can be removed.
+WrapperThermostatTask wrapper_thermostat_task; // This is only for convenience, and could be removed by removing the wrapper from the last ThermostatTask.
 SensorUpdatingThermostatTask g_sensor_updating_thermostat_task(&g_clock, &g_bme_sensor, &g_dallas_sensor, &g_print, &wrapper_thermostat_task);
 HvacControllerThermostatTask g_hvac_controller_thermostat_task(&g_clock, &g_print, &g_sensor_updating_thermostat_task);
 HeatAdvancingThermostatTask g_heat_advancing_thermostat_task(&g_hvac_controller_thermostat_task);
 FanControllerThermostatTask g_fan_controller_thermostat_task(&g_clock, &g_print, &g_heat_advancing_thermostat_task);
-RelaySettingThermostatTask g_relay_setting_thermostat_task(&g_relays, &g_print, &g_fan_controller_thermostat_task);
+RelaySettingThermostatTask g_relay_setting_thermostat_task(&g_relays, &g_print, &GetSystemStatus, &g_fan_controller_thermostat_task);
 UpdateDisplayThermostatTask g_update_display_thermostat_task(&g_lcd, &g_print, &g_relay_setting_thermostat_task);
 ErrorDisplayingThermostatTask g_error_displaying_thermostat_task(&g_lcd, &g_print, &g_update_display_thermostat_task);
 HistoryUpdatingThermostatTask g_history_updating_thermostat_task(&g_error_displaying_thermostat_task);
@@ -158,8 +164,9 @@ void setup() {
   g_print.SetUp();
   Wire.begin();
 
-  // Setup the bme sensor hardware,
+  // We use bme for humidity and indoor air quality.
   g_bme_sensor.SetUp();
+  // We use dallas for temperature
   g_dallas_sensor.SetUp();
 
   // Start handling interrupts.
@@ -212,25 +219,25 @@ Menus menu(&g_settings, &WaitForButtonPress, &g_clock, &g_lcd, &g_storer);
 void loop() {
   // Show basic time information in the bottom row.
   //
-  // This is blocking.
+  // This is blocking using the WaitForButtonPress function.
   const Button button = menu.InformationalState();
 
-  // Override the temperature.
+  // Up/Down on the main screen allows setting an override temperature which holds for 2 hours.
   if (button == Button::UP || button == Button::DOWN) {
-    // This is blocking.
+    // This is blocking using the WaitForButtonPress function.
     menu.EditOverrideTemp();
   }
 
   if (button == Button::LEFT) {
-    // Go through the statuses.
+    // Each left press takes the user through a status field.
     //
-    // This is blocking.
+    // This is blocking using the WaitForButtonPress function.
     menu.ShowStatuses();
   }
   if (button == Button::RIGHT) {
-    // Go through the edit options.
+    // Each left press takes the user through edit options. Using the up/down on an edit option allows the user to edit the field, and pressing select updates the field.
     //
-    // This is blocking.
+    // This is blocking using the WaitForButtonPress function.
     menu.EditSettings();
   }
   // Once we're done editing settings, return back to showing the informational state.

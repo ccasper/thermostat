@@ -17,8 +17,7 @@
 namespace thermostat {
 namespace {
 
-using ::testing::_;
-using namespace std::placeholders;
+namespace t = ::testing;
 
 class MockSettingsStorer : public SettingsStorer {
  public:
@@ -27,8 +26,8 @@ class MockSettingsStorer : public SettingsStorer {
 };
 
 static int counter;
-static ClockStub clock;
-static DisplayStub display;
+static FakeClock clock;
+static FakeDisplay display;
 
 class MenusTest : public testing::Test {
  public:
@@ -58,7 +57,7 @@ class MenusTest : public testing::Test {
   void TearDown() override{};
 
   Settings settings;
-  PrintStub print;
+  FakePrint print;
   MockSettingsStorer mock_storer;
 };
 
@@ -184,7 +183,7 @@ TEST_F(MenusTest, SetpointEdit) {
   clock.SetMillis(0);
 
   // Persisting the settings should get called once.
-  EXPECT_CALL(mock_storer, Write(_)).Times(1);
+  EXPECT_CALL(mock_storer, Write(t::_)).Times(1);
 
   Menus menu = Menus(&settings, &SetpointEdit, &clock, &display, &mock_storer);
   menu.EditSettings();

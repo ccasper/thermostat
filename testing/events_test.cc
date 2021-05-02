@@ -19,7 +19,7 @@ namespace {
 
 TEST(EventsTest, InitialConditions) {
   Settings settings;
-  ClockStub clock;
+  FakeClock clock;
   
   EXPECT_EQ(settings.CurrentEventIndex(), -1);
   for (int i = -1; i < EVENT_SIZE; ++i) {
@@ -35,10 +35,24 @@ TEST(EventsTest, InitialConditions) {
   EXPECT_EQ(CalculateSeconds(FanMode::OFF, settings, Clock::HoursToMillis(24), clock), 0);
 }
 
+TEST(EventsTest, OutdoorTemperatureEstimateNoEvents) {
+  Settings settings;	
+  FakeClock clock; 
+  // Default should be 20F.
+  EXPECT_EQ(OutdoorTemperatureEstimate(settings, clock), 200);
+}
+
+TEST(EventsTest, HeatRiseNoEvents) {
+  Settings settings;	
+  FakeClock clock; 
+  // Default should be 0F.
+  EXPECT_EQ(HeatRise(settings,clock), 000);
+}
+
 TEST(EventsTest, SeveralEvents) {
   Settings settings;
 
-  ClockStub clock;
+  FakeClock clock;
   // Move forward so we don't start at 0.
   clock.Increment(Clock::HoursToMillis(48));
   
@@ -134,7 +148,7 @@ TEST(EventsTest, SeveralEvents) {
 
 TEST(EventsTest, GetHeatTempPerMin) {
   Settings settings;
-  ClockStub clock;
+  FakeClock clock;
   
   clock.SetMillis(Clock::HoursToMillis(0));
   settings.events[3].hvac = HvacMode::HEAT;
@@ -250,7 +264,7 @@ TEST(EventsTest, FanSampleEvents) {
   settings.events[idx].hvac = HvacMode::IDLE;
   settings.events[idx].fan = FanMode::OFF;
 
-  ClockStub clock;
+  FakeClock clock;
   clock.SetMillis(1203 * 60 * 1000);
 
   uint32_t fan_on = CalculateSeconds(FanMode::ON, settings, Clock::HoursToMillis(24), clock); 

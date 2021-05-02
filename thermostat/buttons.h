@@ -1,6 +1,6 @@
+// Converts analog resistor changes into button presses, debounces them, and allows for automatic presses when a button is held down.
 #ifndef BUTTONS_H_
 #define BUTTONS_H_
-// This header converts analog resistor changes into button presses, debounces them, and allows for automatic presses when a button is held down.
 
 #include "interfaces.h"
 

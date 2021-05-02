@@ -1,3 +1,9 @@
+// This is the core logic that makes the thermostat's HVAC system function.
+//
+// Ideally these classes would all be in individual .cc/.h files, however this
+// makes it hard to use in the arduino IDE.
+//
+// These classes manage the top row of the LCD Display, relays, sensor readings, fan, history data.
 #ifndef MAINTAIN_HVAC_H_
 #define MAINTAIN_HVAC_H_
 
@@ -5,9 +11,7 @@
 #include "interfaces.h"
 #include "calculate_iaq.h"
 #include "events.h"
-// This is the core logic that makes the thermostat's HVAC system function.
-//
-// This manages the top row of the LCD Display, relays, sensor readings, fan, history data.
+
 namespace thermostat {
 constexpr uint32_t kManualTemperatureOverrideDuration = Clock::HoursToMillis(2);
 
@@ -15,34 +19,11 @@ constexpr uint8_t kTemperatureWindowSize = 8;
 
 constexpr int kRunEveryMillis = 1500;
 
+// Error status latching value.
 static Status g_status = Status::kOk;
 
-class ThermostatTaskCreator {
-  public:
-    //    ThermostatTaskCreator(Clock* const clock, Print* const print, Relays* const relays, Sensor* const bme_sensor, Sensor* const dallas_sensor) :
-    //      sensor_updating_(bme_sensor, dallas_sensor)
-
-    //    {
-    //    };
-
-  private:
-    //    WrapperThermostatTask wrapper_; // This is only for convenience, and can be removed.
-    //    SensorUpdatingThermostatTask sensor_updating_(&g_bme_sensor, &g_dallas_sensor, &g_print, &wrapper);
-    //   HvacControllerThermostatTask hvac_controller_(&g_clock, &g_print, &g_sensor_updating);
-    //   FanControllerThermostatTask fan_controller_(&g_clock, &g_print, &g_hvac_controller);
-    //   RelaySettingThermostatTask relay_setting_(&g_relays, &g_print, &g_fan_controller);
-    //   UpdateDisplayThermostatTask update_display_(&g_lcd, &g_print, &g_relay_setting);
-    //   ErrorDisplayingThermostatTask error_displaying_(&g_lcd, &g_print, &g_update_display);
-    //   HistoryUpdatingThermostatTask history_updating_(&g_error_displaying);
-    //   PacingThermostatTask pacing_(&g_clock, &g_history_updating);
-
-};
-
-// ThermostatTask decorator layer that does method forwarding. This can be useful if the decorator interface
-// has a larger number of methods.
 class WrapperThermostatTask : public ThermostatTask {
   public:
-    // By default, forward.
     Status RunOnce(Settings* settings) override {
       return Status::kOk;
     }
@@ -63,7 +44,6 @@ class HvacControllerThermostatTask final : public ThermostatTask {
  
       const bool in_cool_mode = (mode == HvacMode::COOL);
 
-      LOG(INFO) << "Cool mode check";
       if (!settings.persisted.cool_enabled) {
         if (in_cool_mode) {
           return HvacMode::IDLE;
@@ -116,7 +96,6 @@ class HvacControllerThermostatTask final : public ThermostatTask {
 
       const int setpoint_x10 =
         GetSetpointTemp(settings, clock_->Now(), HvacMode::HEAT);
-      LOG(INFO) << "Setpoint " << setpoint_x10;
 //   for (const Setpoint& setpoint : settings.persisted.heat_setpoints) {
 //      print_->print("HX: ");
 //      print_->print(setpoint.temperature_x10);
@@ -149,8 +128,6 @@ class HvacControllerThermostatTask final : public ThermostatTask {
       // 70.0|-- Heat on (< setpoint)
 
       *within_tolerance = settings.current_mean_temperature_x10 >= setpoint_x10;
-      LOG(INFO) << "Mean Temp: " << settings.current_mean_temperature_x10;
-      LOG(INFO) << "Within tolerance " << *within_tolerance;
 
       // Should we turn off heating mode.
       if (in_heat_mode) {
@@ -447,8 +424,8 @@ class FanControllerThermostatTask final : public ThermostatTask {
   public:
     explicit FanControllerThermostatTask(Clock* const clock, Print* const print, ThermostatTask* const wrapped) :
       clock_(clock),
-      last_maintain_time_(clock->Millis()),
       print_(print),
+      last_maintain_time_(clock->Millis()),
       wrapped_(wrapped) {};
 
     Status RunOnce(Settings* settings) override {
@@ -513,6 +490,9 @@ class FanControllerThermostatTask final : public ThermostatTask {
     }
 
   private:
+    Clock* const clock_;
+    Print* const print_;
+
     float cycle_seconds = 0;
 
     uint32_t last_maintain_time_ = 0;
@@ -522,9 +502,7 @@ class FanControllerThermostatTask final : public ThermostatTask {
     //
     // We increment for each second the fan is off and decrement (1 second / duty%) for every second fan on.
     // Each time the hvac runs, we run until this counter reaches zero. To handle hvac off cases, when the cycle counter reaches the cycle period, the fan will be forced on.
-    Clock* const clock_;
     uint32_t last_hvac_on_ = 0;
-    Print* const print_;
 
     ThermostatTask* const wrapped_;
 };
@@ -532,13 +510,24 @@ class FanControllerThermostatTask final : public ThermostatTask {
 // ThermostatTask decorator layer that performs HV/AC control management.
 class RelaySettingThermostatTask final : public ThermostatTask {
   public:
-    explicit RelaySettingThermostatTask(Relays* const relays, Print* const print, ThermostatTask* const wrapped) :
+    using GetSystemStatusFn = Status (*)(void);
+
+    explicit RelaySettingThermostatTask(Relays* const relays, Print* const print, GetSystemStatusFn system_status, ThermostatTask* const wrapped) :
       relays_(relays),
       print_(print),
+      system_status_(system_status),
       wrapped_(wrapped) {};
 
     Status RunOnce(Settings* settings) override {
       const Status status = wrapped_->RunOnce(settings);
+
+      // On system error, force off.
+      if (system_status_() != Status::kOk) {
+        relays_->Set(RelayType::kHeat, RelayState::kOff);
+        relays_->Set(RelayType::kCool, RelayState::kOff);
+        relays_->Set(RelayType::kFan, RelayState::kOff);
+        return status;
+      }
 
       if (settings->hvac == HvacMode::HEAT && settings->heat_high) {
         relays_->Set(RelayType::kHeatHigh, RelayState::kOn);
@@ -576,6 +565,7 @@ class RelaySettingThermostatTask final : public ThermostatTask {
   private:
     Relays* const relays_;
     Print* const print_;
+    GetSystemStatusFn system_status_;
 
     ThermostatTask* const wrapped_;
 };

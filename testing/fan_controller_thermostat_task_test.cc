@@ -36,8 +36,8 @@ class FanControllerThermostatTaskTest : public testing::Test {
 
  protected:
   Settings settings = DefaultSettings();
-  ClockStub clock;
-  PrintStub print;
+  FakeClock clock;
+  FakePrint print;
 
   MockThermostatTask wrapper;
   FanControllerThermostatTask task = FanControllerThermostatTask(&clock, &print, &wrapper);

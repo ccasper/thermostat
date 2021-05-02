@@ -31,14 +31,6 @@ class ThermostatTask {
     virtual Status RunOnce(Settings* settings) = 0;
 };
 
-enum class Error {
-  STATUS_NONE,
-  STATUS_OK,
-  BME_SENSOR_FAIL,
-  HEAT_AND_COOL,
-  MENU_DISPLAY_ARG,
-};
-
 struct Date {
   uint8_t hour = 0;
   uint8_t minute = 0;
@@ -166,12 +158,14 @@ class Display : public Print {
 class Sensor {
   public:
     virtual void SetUp() {};
-    
+
     // Most sensors implement this.
-    virtual void StartRequestAsync() = 0;
+    virtual void StartRequestAsync() {};
 
     // Returns temperature in fehrenheit.
-    virtual float GetTemperature() = 0;
+    virtual float GetTemperature() {
+      return 0;
+    };
 
     // Returns relative humidity in %.
     virtual float GetHumidity() {

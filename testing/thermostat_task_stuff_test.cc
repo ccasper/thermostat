@@ -51,10 +51,10 @@ class MaintainHvacTest : public testing::Test {
 
   Settings settings = DefaultSettings();
 
-  ClockStub clock;
+  FakeClock clock;
 
-  PrintStub print;
-  DisplayStub display;
+  FakePrint print;
+  FakeDisplay display;
   RelaysStub relays;
   SensorStub bme_sensor;
   SensorStub dallas_sensor;

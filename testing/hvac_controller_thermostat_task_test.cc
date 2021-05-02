@@ -56,9 +56,9 @@ class HvacControllerThermostatTaskTest : public testing::Test {
 
   Settings settings = DefaultSettings();
 
-  ClockStub clock;
+  FakeClock clock;
 
-  PrintStub print;
+  FakePrint print;
 
   MockThermostatTask wrapper;
   HvacControllerThermostatTask task = HvacControllerThermostatTask(&clock, &print, &wrapper);

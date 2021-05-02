@@ -262,6 +262,7 @@ static uint32_t CalculateSeconds(const HvacMode hvac, const Settings& settings,
 
   return total_seconds;
 };
+
 static uint32_t HeatRise(const Settings& settings, const Clock& clock) {
   uint32_t now = clock.Millis();
   // Iterate backward for the latest two heat events or up to 12 hours.
@@ -292,9 +293,14 @@ static uint32_t HeatRise(const Settings& settings, const Clock& clock) {
     
     idx = (idx - 1) % EVENT_SIZE;
   }
+  
+  if (heatrate_count == 0) {
+	  return 0;
+  }
 
   return heatrate/heatrate_count;  
 }
+
 static int16_t OutdoorTemperatureEstimate(const Settings& settings, const Clock& clock) {
   const uint32_t oldest_start_time = cmin(OldestEventStart(settings, clock), Clock::HoursToMillis(24));
   const uint32_t heat_seconds = CalculateSeconds(HvacMode::HEAT, settings, Clock::HoursToMillis(24), clock);

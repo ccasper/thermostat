@@ -8,7 +8,7 @@
 
 namespace thermostat {
 
-class SensorStub : public Sensor {
+class FakeSensor : public Sensor {
  public:
   void SetTemperature(float temp) { temp_ = temp; };
   void EnableAsyncAssert() { enable_async_assert_ = true; };
@@ -29,7 +29,6 @@ class SensorStub : public Sensor {
 
   void SetHumidity(uint32_t humidity) { humidity_ = humidity; }
   uint32_t GetGasResistance() override {
-    // ASSERT_TRUE(heater_enabled_);
     return heater_value_;
   };
 
@@ -42,7 +41,7 @@ class SensorStub : public Sensor {
   bool enable_async_assert_ = false;
 };
 
-class ClockStub : public Clock {
+class FakeClock : public Clock {
  public:
   uint32_t Millis() const override { return millis_; };
   void Increment(uint32_t millis) { millis_ += millis; }
@@ -76,15 +75,15 @@ class MockThermostatTask : public ThermostatTask {
 };
 
 // Abstract interface for Serial/Debug output.
-class PrintStub : public Print {
+class FakePrint : public Print {
  public:
   virtual void Setup() {}
   void write(uint8_t ch) override { std::cout << ch; };
 };
 
-class DisplayStub : public Display {
+class FakeDisplay : public Display {
  public:
-  DisplayStub() {
+  FakeDisplay() {
     for (uint8_t r = 0; r < 2; ++r) {
       for (uint8_t c = 0; c < 16; ++c) {
         bytes_[r][c] = ' ';
@@ -134,7 +133,7 @@ class DisplayStub : public Display {
   uint8_t col_pos_;
 };
 
-class SettingsStorerStub : public SettingsStorer {
+class FakeSettingsStorer : public SettingsStorer {
  public:
   void write(const Settings &settings) { stored_settings = settings; };
   void Read(Settings *settings) override { *settings = stored_settings; };
