@@ -101,14 +101,14 @@ SsdRelays g_relays = SsdRelays();
 
 // Create the sensors
 #ifdef DEV_BOARD
-  Dht22Sensor g_dallas_sensor = Dht22Sensor(&g_print);
-//  CannedSensor g_dallas_sensor = CannedSensor(&g_print);
-  CannedSensor g_bme_sensor = CannedSensor(&g_print);
+  CannedSensor g_secondary_temp_sensor = CannedSensor(&g_print);
+  Dht22Sensor g_primary_sensor = Dht22Sensor(&g_print);
+//  BmeSensor g_primary_sensor = BmeSensor(&g_print);
 #else
   // Create the temperature sensor.
-  DallasSensor g_dallas_sensor = DallasSensor(&g_print);
-  // Create the temperature/humidity/gas quality sensor.
-  BmeSensor g_bme_sensor = BmeSensor(&g_print);
+  DallasSensor g_secondary_temp_sensor = DallasSensor(&g_print);
+  // Create the temperature/humidity sensor.
+  Dht22Sensor g_primary_sensor = Dht22Sensor(&g_print);
 #endif
 
 // Create the clock with the real time device.
@@ -141,15 +141,17 @@ Status GetSystemStatus() {
 // Normally shared_ptr/unique_ptr objects would be used, however for embedded AVR, avoiding malloc/new saves resources. Therefore global
 // objects for static memory usage accounting is used.
 WrapperThermostatTask wrapper_thermostat_task; // This is only for convenience, and could be removed by removing the wrapper from the last ThermostatTask.
-SensorUpdatingThermostatTask g_sensor_updating_thermostat_task(&g_clock, &g_bme_sensor, &g_dallas_sensor, &g_print, &wrapper_thermostat_task);
+SensorUpdatingThermostatTask g_sensor_updating_thermostat_task(&g_clock, &g_primary_sensor, &g_secondary_temp_sensor, &g_print, &wrapper_thermostat_task);
 HvacControllerThermostatTask g_hvac_controller_thermostat_task(&g_clock, &g_print, &g_sensor_updating_thermostat_task);
-HeatAdvancingThermostatTask g_heat_advancing_thermostat_task(&g_hvac_controller_thermostat_task);
+LockoutControllingThermostatTask g_lockout_controlling_thermostat_task(&g_hvac_controller_thermostat_task);
+HeatAdvancingThermostatTask g_heat_advancing_thermostat_task(&g_lockout_controlling_thermostat_task);
 FanControllerThermostatTask g_fan_controller_thermostat_task(&g_clock, &g_print, &g_heat_advancing_thermostat_task);
 RelaySettingThermostatTask g_relay_setting_thermostat_task(&g_relays, &g_print, &GetSystemStatus, &g_fan_controller_thermostat_task);
 UpdateDisplayThermostatTask g_update_display_thermostat_task(&g_lcd, &g_print, &g_relay_setting_thermostat_task);
 ErrorDisplayingThermostatTask g_error_displaying_thermostat_task(&g_lcd, &g_print, &g_update_display_thermostat_task);
 HistoryUpdatingThermostatTask g_history_updating_thermostat_task(&g_error_displaying_thermostat_task);
-PacingThermostatTask g_pacing_thermostat_task(&g_clock, &g_history_updating_thermostat_task);
+LoggingThermostatTask g_logging_thermostat_task(&g_print, &g_history_updating_thermostat_task);
+PacingThermostatTask g_pacing_thermostat_task(&g_clock, &g_logging_thermostat_task);
 
 // Resulting CreateThermostatTask pointer.
 ThermostatTask* const g_thermostat_task = &g_pacing_thermostat_task;
@@ -165,9 +167,9 @@ void setup() {
   Wire.begin();
 
   // We use bme for humidity and indoor air quality.
-  g_bme_sensor.SetUp();
+  g_primary_sensor.SetUp();
   // We use dallas for temperature
-  g_dallas_sensor.SetUp();
+  g_secondary_temp_sensor.SetUp();
 
   // Start handling interrupts.
   sei();

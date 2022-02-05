@@ -12,28 +12,49 @@ class Print {
       write(ch);
     };
 
+    void println() {
+      write('\r');
+      write('\n');
+    };
+
     void print(const unsigned char ch) {
       write(ch);
     };
+
+    void println(const unsigned char ch) {
+      write(ch);
+      println();
+    }
 
     // 2 byte values.
     void print(const int value) {
       print(static_cast<long>(value));
     }
+    
+    void println(const int value) {
+      println(static_cast<long>(value));
+    }
 
-    void print(unsigned int value) {
+    void print(const unsigned int value) {
       print(static_cast<unsigned long>(value));
+    };
+    void println(const unsigned int value) {
+      println(static_cast<unsigned long>(value));
     };
 
     // 4 byte values.
-    void print(const long value);
+    void print(long value);
+    void println(long value);
 
-    void print(unsigned long);
+    void print(unsigned long value);
+    void println(unsigned long value);
 
-    void print(double);
+    void print(double value);
+    void println(double value);
 
     // Variable size requires '\0' terminator.
-    void print(const char*);
+    void print(const char* chars);
+    void println(const char* chars);
 };
 
 void Print::print(long value) {
@@ -45,10 +66,20 @@ void Print::print(long value) {
   print(static_cast<unsigned long>(value));
 }
 
+void Print::println(long value) {
+  print(value);
+  println();
+}
+
 void Print::print(const char* chars) {
   while (*chars) {
     write(*chars++);
   }
+}
+
+void Print::println(const char* chars) {
+  print(chars);
+  println();
 }
 
 void Print::print(double value) {
@@ -69,6 +100,11 @@ void Print::print(double value) {
   print(whole);
   write('.');
   print(remainder);
+}
+
+void Print::println(double value) {
+  print(value);
+  println();
 }
 
 void Print::print(unsigned long value) {
@@ -92,6 +128,12 @@ void Print::print(unsigned long value) {
     write(buf[j]);
   }
 }
+
+void Print::println(unsigned long value) {
+  print(value);
+  println();
+}
+
 } // namespace thermostat
 
 #endif // PRINT_H_

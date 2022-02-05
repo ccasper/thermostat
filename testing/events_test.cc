@@ -122,7 +122,7 @@ TEST(EventsTest, SeveralEvents) {
   // Heat for 24 minutes, off for 35 mins, Cool for 17 mins.
   clock.Increment(Clock::MinutesToMillis(17));
 
-  EXPECT_FALSE(IsInLockoutMode(HvacMode::HEAT, settings.events, clock.Millis()));
+  EXPECT_TRUE(IsInLockoutMode(HvacMode::HEAT, settings.events, clock.Millis()));
   EXPECT_FALSE(IsInLockoutMode(HvacMode::COOL, settings.events, clock.Millis()));
 
   EXPECT_EQ(GetEventDuration(0, settings, clock.Millis()), Clock::MinutesToMillis(24));

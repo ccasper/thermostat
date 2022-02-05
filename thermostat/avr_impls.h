@@ -1,6 +1,6 @@
+// Implement the AVR and hardware logic needed to run on the actual thermostat.
 #ifndef AVR_IMPLS_H_
 #define AVR_IMPLS_H_
-// This header file implements the AVR and hardware logic needed to run on the actual thermostat.
 
 #include <LiquidCrystal.h>
 #include <Adafruit_BME680.h>
@@ -8,9 +8,8 @@
 #include "interfaces.h"
 #include "uRTCLib.h"
 #include "print.h"
+#include "DHT.h"
 
-#define ONE_WIRE_BUS 33
-#define UNUSED(x) (void)(x)
 
 namespace thermostat {
 
@@ -110,6 +109,7 @@ class CannedDisplay : public Display {
 #endif
 
 class DallasSensor : public Sensor {
+  static constexpr uint8_t kOneWirePin = 33; 
   public:
     DallasSensor(Print *print) : print_(print) {
       sensor_.begin();
@@ -136,7 +136,7 @@ class DallasSensor : public Sensor {
 
   private:
     DeviceAddress temperature_address_;
-    OneWire temperature_one_wire_ = OneWire(ONE_WIRE_BUS);
+    OneWire temperature_one_wire_ = OneWire(kOneWirePin);
 
     DallasTemperature sensor_ = DallasTemperature(&temperature_one_wire_);
     Print *print_;
@@ -204,6 +204,49 @@ class Lcd : public Display {
 
 };
 
+class Dht22Sensor: public Sensor {
+  public:
+    // Pin the sensor is connected to.
+    static constexpr uint8_t kDhtPin = 30;
+
+    Dht22Sensor(Print *print) : dht_(DHT(kDhtPin, DHT22)), print_(print) {};
+
+    void SetUp() override {
+      dht_.begin();
+      temperature_ = dht_.readTemperature(true);
+      humidity_ = dht_.readHumidity();
+    };
+    void StartRequestAsync() override {
+      // Compute heat index in Fahrenheit (the default)
+      //float hif = dht_.computeHeatIndex(f, h);
+    };
+
+    float GetHumidity() override {
+      humidity_ = dht_.readHumidity();
+      
+      print_->print("Feel: ");
+      print_->print(dht_.computeHeatIndex(temperature_,humidity_));
+      print_->print("F\r\n");
+      return dht_.readHumidity();
+    }
+
+    float GetTemperature() override {
+      temperature_ = dht_.readTemperature(true);
+      print_->print("DHT22: ");
+      print_->print(temperature_);
+      print_->print("F\r\n");
+      return fmax(fmin(temperature_, 99.9), -20.0);
+      //return fmin(fmax(temperature_, 99.9), -17.7) * 1.8 + 32.0;
+    };
+  private:
+    DHT dht_;
+    float humidity_;
+    float temperature_;
+    Print *print_;
+    static constexpr int ON = LOW;
+    static constexpr int OFF = HIGH;
+
+};
 class BmeSensor : public Sensor {
   public:
     BmeSensor(Print *print) : print_(print) {};
@@ -281,7 +324,7 @@ class RealClock : public Clock {
       }
       return date;
     }
-    
+
     Date Now() override {
       rtc_.refresh();
       Date date;

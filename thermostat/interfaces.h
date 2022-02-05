@@ -14,7 +14,7 @@ namespace thermostat {
 class Settings;
 
 enum class Status {kOk, kSkipped,
-                   kBmeSensorFail,
+                   kPrimarySensorFail,
                    kHeatAndCool,
                    kMenuDisplayArg, kError
                   };
@@ -162,7 +162,11 @@ class Sensor {
     // Most sensors implement this.
     virtual void StartRequestAsync() {};
 
-    // Returns temperature in fehrenheit.
+    // Returns temperature in fehrenheit utilizing the temp and humidity for calculating the heat index.
+    virtual float GetTemperatureIndex() {
+      return 0;
+    };
+
     virtual float GetTemperature() {
       return 0;
     };

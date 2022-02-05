@@ -38,14 +38,10 @@ class HvacControllerThermostatTask final : public ThermostatTask {
       wrapped_(wrapped) {};
 
     HvacMode DetermineCoolMode(const Settings& settings, bool* within_tolerance) {
-      HvacMode mode =
-          (settings.hvac == HvacMode::COOL_LOCKOUT) ?
-              HvacMode::IDLE : settings.hvac;
+      HvacMode mode = settings.hvac;
  
-      const bool in_cool_mode = (mode == HvacMode::COOL);
-
       if (!settings.persisted.cool_enabled) {
-        if (in_cool_mode) {
+        if (settings.hvac == HvacMode::COOL) {
           return HvacMode::IDLE;
         }
         return mode;
@@ -56,7 +52,7 @@ class HvacControllerThermostatTask final : public ThermostatTask {
       *within_tolerance = settings.current_mean_temperature_x10 <= setpoint_x10;
 
       // Should we disable cooling mode?
-      if (in_cool_mode) {
+      if (settings.hvac == HvacMode::COOL) {
         if (settings.current_mean_temperature_x10 <= setpoint_x10 - settings.persisted.tolerance_x10) {
           // Stop cooling, we've reached the our lower tolerance limit.
           return HvacMode::IDLE;
@@ -69,10 +65,6 @@ class HvacControllerThermostatTask final : public ThermostatTask {
         // Assuming a set point of 70, we should start cooling at 72 with a tolerance set
         // of 2.
         if (!*within_tolerance) {
-          if (IsInLockoutMode(HvacMode::COOL, settings.events, clock_->Millis())) {
-            return HvacMode::COOL_LOCKOUT;
-          }
-
           // Start cooling, we've reached the cooling setpoint.
           return HvacMode::COOL;
         }
@@ -81,14 +73,10 @@ class HvacControllerThermostatTask final : public ThermostatTask {
     }
 
     HvacMode DetermineHeatMode(const Settings& settings, bool* within_tolerance) {
-      HvacMode mode =
-          (settings.hvac == HvacMode::HEAT_LOCKOUT) ?
-              HvacMode::IDLE : settings.hvac;
+      HvacMode mode = settings.hvac;
             
-      const bool in_heat_mode = (mode == HvacMode::HEAT);
-
       if (!settings.persisted.heat_enabled) {
-        if (in_heat_mode) {
+        if (settings.hvac == HvacMode::HEAT) {
           return HvacMode::IDLE;
         }
         return mode;
@@ -96,18 +84,6 @@ class HvacControllerThermostatTask final : public ThermostatTask {
 
       const int setpoint_x10 =
         GetSetpointTemp(settings, clock_->Now(), HvacMode::HEAT);
-//   for (const Setpoint& setpoint : settings.persisted.heat_setpoints) {
-//      print_->print("HX: ");
-//      print_->print(setpoint.temperature_x10);
-//      print_->print('\n');
-//  }
-//       
-//      print_->print("Heat override: ");
-//      print_->print(settings.override_temperature_x10);
-//      print_->print('\n');
-//      print_->print("Heat Setpoint: ");
-//      print_->print(setpoint_x10);
-//      print_->print('\n');
 
       // If heating is on, keep the temperature above the setpoint.
       // If cooling is on, keep the temperature below the setpoint.
@@ -128,9 +104,11 @@ class HvacControllerThermostatTask final : public ThermostatTask {
       // 70.0|-- Heat on (< setpoint)
 
       *within_tolerance = settings.current_mean_temperature_x10 >= setpoint_x10;
+      print_->print("Within Tolerance: ");
+      print_->print(*within_tolerance ? "T" : "F");
 
       // Should we turn off heating mode.
-      if (in_heat_mode) {
+      if (settings.hvac == HvacMode::HEAT) {
         // Stop heating, we've reached the tolerance above the heating setpoint.
         if (settings.current_mean_temperature_x10 >= setpoint_x10 + settings.persisted.tolerance_x10) {
           return HvacMode::IDLE;
@@ -142,12 +120,8 @@ class HvacControllerThermostatTask final : public ThermostatTask {
       //
       // Assuming Setpoint is 70 and current room temp is 69.9, we should enable heating.
       if (!*within_tolerance) {
-        // Lockout mode prevents quick switches between heat and cool
-        if (IsInLockoutMode(HvacMode::HEAT, settings.events, clock_->Millis())) {
-          return HvacMode::HEAT_LOCKOUT;
-        } else {
-          return HvacMode::HEAT;
-        }
+        print_->print("Set to heat.");
+        return HvacMode::HEAT;
       }
       return mode;
     }
@@ -161,8 +135,6 @@ class HvacControllerThermostatTask final : public ThermostatTask {
       // Reset the settings changed flag since we're going to update the HVAC with the values
       // in the settings object.
       settings->changed = 0;
-
-      ++hvac_run_counter_;
 
       // Allow the manual temperature override to only apply for 2 hours. We clear the
       // override temperature to indicate no override is being applied.
@@ -185,7 +157,7 @@ class HvacControllerThermostatTask final : public ThermostatTask {
       print_->print(settings->persisted.heat_enabled ? 'T' : 'F');
       print_->print(" Tol: ");
       print_->print(settings->persisted.tolerance_x10);
-      print_->print('\n');
+      print_->println();
 
       // Heating takes precedence over cooling.
       if (settings->hvac == HvacMode::HEAT || settings->hvac == HvacMode::HEAT_LOCKOUT) {
@@ -199,15 +171,15 @@ class HvacControllerThermostatTask final : public ThermostatTask {
     }
 
   private:
-    uint8_t hvac_run_counter_ = 0;
-
     Clock* const clock_;
     Print* const print_;
 
     ThermostatTask* const wrapped_;
 };
 
-// ThermostatTask decorator layer that increases to High Heat after 30 minutes.
+
+
+// ThermostatTask decorator layer that increases to High Heat after 10 minutes.
 class HeatAdvancingThermostatTask final : public ThermostatTask {
   public:
     explicit HeatAdvancingThermostatTask(ThermostatTask* const wrapped) :
@@ -230,7 +202,7 @@ class HeatAdvancingThermostatTask final : public ThermostatTask {
         return status;
       }
 
-      // If we've been heating for 30 minutes and haven't gotten above the low, move to high mode.
+      // If we've been heating for 10 minutes and haven't gotten above the low, move to high mode.
       //
       // The high heat flag needs to be sticky until heat turns off, which is why we only clear it
       // if not in HEAT mode.
@@ -249,14 +221,64 @@ class HeatAdvancingThermostatTask final : public ThermostatTask {
     ThermostatTask* const wrapped_;
 };
 
+// ThermostatTask decorator layer that performs HVAC lockout at power on and when switching modes.
+class LockoutControllingThermostatTask final : public ThermostatTask {
+  public:
+    explicit LockoutControllingThermostatTask(ThermostatTask* const wrapped) :
+      wrapped_(wrapped) {};
+
+
+    Status RunOnce(Settings* settings) override {
+      // The decorator layers below us don't understand lockout (which really
+      // means idle), so update them to IDLE.
+      if (settings->hvac == HvacMode::COOL_LOCKOUT || settings->hvac == HvacMode::HEAT_LOCKOUT) {
+        settings->hvac = HvacMode::IDLE;
+  	  }
+
+      // Call through.
+      Status status = wrapped_->RunOnce(settings);
+            
+      // If this is the first run from boot, initialize.
+      if (settings->first_run == true) {
+        hvac_start_time_ = settings->now;
+      }
+
+      bool is_in_lockout = false;
+      
+      // Wait 1 minute from boot before allowing Heating or Cooling.
+      if (Clock::MinutesDiff(hvac_start_time_, settings->now) < 1) {
+        is_in_lockout = true;
+      }
+
+      // Lockout mode prevents quick switches between heat and cool
+      if (IsInLockoutMode(settings->hvac, settings->events, settings->now)) {
+        is_in_lockout = true;
+      }
+
+      if (is_in_lockout) {
+        if (settings->hvac == HvacMode::HEAT) {
+          settings->hvac = HvacMode::HEAT_LOCKOUT;
+        }
+        if (settings->hvac == HvacMode::COOL) {
+          settings->hvac = HvacMode::COOL_LOCKOUT;
+        }
+      }
+      return status;
+    }
+
+  private:
+    uint32_t hvac_start_time_ = 0;
+    ThermostatTask* const wrapped_;
+};
+
 // ThermostatTask decorator layer that performs HV/AC control management.
 class SensorUpdatingThermostatTask final : public ThermostatTask {
   public:
-    explicit SensorUpdatingThermostatTask(Clock* const clock, Sensor* const bme_sensor, Sensor* const dallas_sensor, Print* const print, ThermostatTask* const wrapped) :
+    explicit SensorUpdatingThermostatTask(Clock* const clock, Sensor* const dual_sensor, Sensor* const secondary_temp_sensor, Print* const print, ThermostatTask* const wrapped) :
       clock_(clock),
       print_(print),
-      bme_sensor_(bme_sensor),
-      dallas_sensor_(dallas_sensor),
+      primary_sensor_(dual_sensor),
+      secondary_temp_sensor_(secondary_temp_sensor),
       wrapped_(wrapped) {};
 
     Status RunOnce(Settings* settings) override {
@@ -267,8 +289,8 @@ class SensorUpdatingThermostatTask final : public ThermostatTask {
 
       if (!sensor_started_) {
         // Kick off the next asynchronous readings.
-        bme_sensor_->StartRequestAsync();
-        dallas_sensor_->StartRequestAsync();
+        primary_sensor_->StartRequestAsync();
+        secondary_temp_sensor_->StartRequestAsync();
         sensor_started_ = true;
         ;
 
@@ -280,57 +302,25 @@ class SensorUpdatingThermostatTask final : public ThermostatTask {
 
       // Scale by 10 and clip the temperature to 99.9°.
       const int temperature =
-        cmin(dallas_sensor_->GetTemperature() * 10, 999);
+        cmin(primary_sensor_->GetTemperature() * 10, 999);
 
       // Store the new value in the settings.
       settings->current_temperature_x10 = temperature;
 
-      if (!bme_sensor_->EndReading()) {
-        return Status::kBmeSensorFail;
+      if (!primary_sensor_->EndReading()) {
+        return Status::kPrimarySensorFail;
       }
-      settings->current_humidity = bme_sensor_->GetHumidity();
+      settings->current_humidity = primary_sensor_->GetHumidity();
 
-      print_->print("MaintainHvac");
-      print_->print(" BME = ");
-      const int bme_temperature = cmin(bme_sensor_->GetTemperature() * 10.0, 999);
+      const int bme_temperature = cmin(primary_sensor_->GetTemperature() * 10.0, 999);
       settings->current_bme_temperature_x10 = bme_temperature;
-      print_->print(bme_temperature);
-      print_->print(" °F\r\n");
-      print_->print(" Dallas = ");
-      print_->print(temperature);
-      print_->print(" °F\r\n");
       print_->print(" Pressure = ");
-      print_->print(bme_sensor_->GetPressure() / 100.0);
-      print_->print(" hPa\r\n");
-      print_->print(" Humidity = ");
-      print_->print(bme_sensor_->GetHumidity());
-      print_->print(" %\r\n");
-      if (hvac_gas_measurement_on_) {
-        print_->print(" Gas = ");
-        print_->print(bme_sensor_->GetGasResistance() / 1000.0);
-        print_->print(" KOhms\r\n");
-        settings->air_quality_score = CalculateIaqScore(bme_sensor_->GetHumidity(), bme_sensor_->GetGasResistance());
-        print_->print(" IAQ: ");
-        print_->print(settings->air_quality_score);
-        print_->print("% ");
-      }
-
-      // Turn off the gas heater/sensor if it was previously enabled.
-      if (hvac_gas_measurement_on_) {
-        bme_sensor_->EnableGasHeater(false);
-        hvac_gas_measurement_on_ = false;
-      }
-
-      // // Run the gas sensor periodically (every 20s). We do this periodically based on the
-      // // modulo of the hvac_run_counter.
-      // if (hvac_run_counter % (20000 / kRunEveryMillis) == 0) {
-      //   bme_sensor->EnableGasHeater(true);
-      //   hvac_gas_measurement_on = true;
-      //  }
+      print_->print(primary_sensor_->GetPressure() / 100.0);
+      print_->println(" hPa");
 
       // Kick off the next asynchronous readings.
-      bme_sensor_->StartRequestAsync();
-      dallas_sensor_->StartRequestAsync();
+      primary_sensor_->StartRequestAsync();
+      secondary_temp_sensor_->StartRequestAsync();
 
       // Only subtract past values that were previously added to the window.
       if (temperature_filled_) {
@@ -371,15 +361,45 @@ class SensorUpdatingThermostatTask final : public ThermostatTask {
 
     bool sensor_started_ = false;
     bool values_initialized_ = false;
-    bool hvac_gas_measurement_on_ = false;
 
     Clock* const clock_;
     Print* const print_;
 
-    Sensor* const bme_sensor_;
-    Sensor* const dallas_sensor_;
+    Sensor* const primary_sensor_;
+    Sensor* const secondary_temp_sensor_;
 
 
+    ThermostatTask* const wrapped_;
+};
+
+// ThermostatTask decorator layer that performs debug logging.
+class LoggingThermostatTask final : public ThermostatTask {
+  public:
+    explicit LoggingThermostatTask(Print* const print, ThermostatTask* const wrapped) :
+      print_(print),
+      wrapped_(wrapped) {};
+
+    Status RunOnce(Settings* settings) override {
+      Status status = wrapped_->RunOnce(settings);
+
+      print_->print(" 2nd Temp = ");
+      print_->print(settings->current_bme_temperature_x10);
+      print_->println("°F");
+      print_->print(" Primary = ");
+      print_->print(settings->current_temperature_x10);
+      print_->println("°F");
+      print_->print(" Humidity = ");
+      print_->print(static_cast<int>(settings->current_humidity));
+      print_->println(" %");
+
+      print_->print("Logging HVAC setting: ");
+      print_->print(static_cast<unsigned int>(settings->hvac));
+      print_->println();
+      return status;
+    }
+
+  private:
+    Print* const print_;
     ThermostatTask* const wrapped_;
 };
 

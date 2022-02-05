@@ -35,6 +35,33 @@ cc_test(
 )
 
 cc_test(
+    name = "lockout_controlling_thermostat_task_test",
+    srcs = ["lockout_controlling_thermostat_task_test.cc"],
+    deps = [
+		    "@gtest//:gtest",
+		    "@gtest//:gtest_main",
+		    "@google_glog//:glog",
+		    "@com_github_gflags_gflags//:gflags",
+		    "//thermostat:core",
+		    ":mock_impls"
+    ],
+    copts = ["-Ithermostat"],
+)
+
+cc_test(
+    name = "heat_advancing_thermostat_task_test",
+    srcs = ["heat_advancing_thermostat_task_test.cc"],
+    deps = [
+		    "@gtest//:gtest",
+		    "@gtest//:gtest_main",
+		    "@google_glog//:glog",
+		    "@com_github_gflags_gflags//:gflags",
+		    "//thermostat:core",
+		    ":mock_impls"
+    ],
+    copts = ["-Ithermostat"],
+)
+cc_test(
     name = "print_test",
     srcs = ["print_test.cc"],
     deps = [
@@ -51,6 +78,34 @@ cc_test(
 cc_test(
     name = "buttons_test",
     srcs = ["buttons_test.cc"],
+    deps = [
+		    "@gtest//:gtest",
+		    "@gtest//:gtest_main",
+		    "@google_glog//:glog",
+		    "@com_github_gflags_gflags//:gflags",
+		    "@com_google_absl//absl/strings",
+		    "//thermostat:core",
+    ],
+    copts = ["-Ithermostat"],
+)
+
+cc_test(
+    name = "comparison_test",
+    srcs = ["comparison_test.cc"],
+    deps = [
+		    "@gtest//:gtest",
+		    "@gtest//:gtest_main",
+		    "@google_glog//:glog",
+		    "@com_github_gflags_gflags//:gflags",
+		    "@com_google_absl//absl/strings",
+		    "//thermostat:core",
+    ],
+    copts = ["-Ithermostat"],
+)
+
+cc_test(
+    name = "settings_test",
+    srcs = ["settings_test.cc"],
     deps = [
 		    "@gtest//:gtest",
 		    "@gtest//:gtest_main",

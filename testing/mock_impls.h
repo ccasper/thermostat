@@ -103,7 +103,8 @@ class FakeDisplay : public Display {
   };
 
   void SetCursor(const int col, const int row) override {
-    LOG(INFO) << "SetCursor: c:" << col << " r:" << row;
+    // This log statement can be helpful in debugging unit test bugs.
+    // LOG(INFO) << "SetCursor: c:" << col << " r:" << row;
     row_pos_ = row;
     col_pos_ = col;
   };
